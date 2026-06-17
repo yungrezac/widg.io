@@ -47,7 +47,7 @@ app.get('/w/:id', async (req, res) => {
   const { data, error } = await supabase.from('stream_widgets').select('code_content').eq('id', id).single();
 
   if (error || !data || !data.code_content) {
-    return res.status(404).send('<h1 style="color:white; font-family:sans-serif; text-align:center; margin-top:20px;">Виджет не найден</h1>');
+    return res.status(404).send('<h1 style="color:white; font-family:sans-serif; text-align:center; margin-top:20px;">Виджет не найден на widg.space</h1>');
   }
 
   res.setHeader('Content-Type', 'text/html');
@@ -98,11 +98,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // В реальном приложении здесь стоит добавить логику уменьшения usersCount и остановки коннекта
+    // Логика отключения (можно добавить уменьшение счетчика)
   });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 StreamKit Server запущен на порту ${PORT}`);
+  console.log(`🚀 widg.space Server запущен на порту ${PORT}`);
 });
