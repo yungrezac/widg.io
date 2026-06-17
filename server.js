@@ -25,8 +25,15 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-// --- 1. ХОСТИНГ ВИДЖЕТОВ ---
-// Когда OBS запрашивает ссылку вида https://твой-сайт.com/w/15?user=tiktok_name
+// Раздача статических файлов из текущей директории
+app.use(express.static(__dirname));
+
+// --- 1. РАЗДАЧА ГЛАВНОГО САЙТА (ФРОНТЕНД) ---
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// --- 2. ХОСТИНГ ВИДЖЕТОВ (ДЛЯ OBS) ---
 app.get('/w/:id', async (req, res) => {
   const { id } = req.params;
   
@@ -38,7 +45,7 @@ app.get('/w/:id', async (req, res) => {
     .single();
 
   if (error || !data || !data.code_content) {
-    return res.status(404).send('<h1>Виджет не найден</h1>');
+    return res.status(404).send('<h1 style="color:white; font-family:sans-serif; text-align:center; margin-top:20px;">Виджет не найден</h1>');
   }
 
   // Отдаем сырой HTML код. OBS его отрендерит как полноценную страницу.
@@ -46,7 +53,7 @@ app.get('/w/:id', async (req, res) => {
   res.send(data.code_content);
 });
 
-// --- 2. TIKTOK LIVE WEB SOCKET ---
+// --- 3. TIKTOK LIVE WEB SOCKET ---
 const activeTikTokStreams = new Map();
 
 io.on('connection', (socket) => {
@@ -94,14 +101,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // В реальном проекте тут нужно уменьшать usersCount и отключать tiktokLiveConnection
+    // В реальном приложении здесь стоит добавить логику уменьшения usersCount
   });
-});
-
-// --- 3. ХОСТИНГ ФРОНТЕНДА (REACT) ---
-app.use(express.static(path.join(__dirname, 'dist')));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
