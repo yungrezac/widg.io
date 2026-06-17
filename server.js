@@ -5,10 +5,9 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
-import { createRequire } from 'module';
 
-const require = createRequire(import.meta.url);
-const { WebcastPushConnection } = require('tiktok-live-connector');
+// 1. Используем современный импорт и новое имя класса TikTokLiveConnection
+import { TikTokLiveConnection } from 'tiktok-live-connector';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +25,7 @@ app.use(express.static(__dirname));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-// Добавляем глобальный перехват ошибок, чтобы сервер НИКОГДА не падал полностью
+// Глобальный перехват ошибок, чтобы сервер НИКОГДА не падал полностью
 process.on('uncaughtException', (err) => {
     console.error('🔥 Критическая ошибка (uncaughtException):', err);
 });
@@ -35,7 +34,7 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('🔥 Необработанный Promise (unhandledRejection):', reason);
 });
 
-// Полный список событий из документации tiktok-live-connector
+// Полный список событий
 const TIKTOK_EVENTS = [
     'chat', 'gift', 'like', 'roomUser', 'member', 'social', 'follow', 'share',
     'emote', 'envelope', 'questionNew', 'linkMicBattle', 'linkMicArmies',
@@ -63,7 +62,6 @@ app.get('/w/:id', async (req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.send(data.code_content);
   } catch (err) {
-    // Если происходит сбой, отдаем 500 ошибку, а не крашим весь сервер
     console.error("Ошибка при получении виджета:", err);
     res.status(500).send('<h1 style="color:white; font-family:sans-serif; text-align:center; margin-top:20px;">Внутренняя ошибка сервера</h1>');
   }
@@ -77,63 +75,62 @@ io.on('connection', (socket) => {
     if (!tiktokUsername) return;
     socket.join(tiktokUsername);
 
-    // Если мы уже слушаем этого стримера, просто говорим виджету статус
+    // Если мы уже слушаем этого стримера
     if (activeTikTokStreams.has(tiktokUsername)) {
       const streamData = activeTikTokStreams.get(tiktokUsername);
       streamData.usersCount += 1;
       
-      // Отправляем статус с кешированным значением подписчиков
+      // 2. В новой версии библиотеки статус подключения проверяется так:
+      const isConnected = streamData.connection?.state?.isConnected || false;
+      
       socket.emit('stream_status', { 
-          isLive: streamData.connection?.getState()?.isConnected || false,
+          isLive: isConnected,
           followerCount: streamData.lastFollowerCount || 0
       });
       return;
     }
 
     console.log(`[TikTok] Подключаемся к: ${tiktokUsername}`);
-    const connection = new WebcastPushConnection(tiktokUsername, {
+    
+    // 3. Используем новый класс TikTokLiveConnection
+    const connection = new TikTokLiveConnection(tiktokUsername, {
       processInitialData: true,
       enableExtendedGiftInfo: true
     });
     
     activeTikTokStreams.set(tiktokUsername, { connection, usersCount: 1, lastFollowerCount: 0 });
 
-    // ВАЖНО: Добавляем обработчик ошибок, чтобы сервер не падал
     connection.on('error', (err) => {
         console.error(`[TikTok Error - ${tiktokUsername}]:`, err);
     });
 
-    // Динамически подписываемся на ВСЕ события из массива и отправляем в сокет-комнату
     TIKTOK_EVENTS.forEach(eventName => {
         connection.on(eventName, (data) => {
             io.to(tiktokUsername).emit(eventName, data);
         });
     });
 
-    // Обработка особых системных статусов
     connection.on('streamEnd', () => io.to(tiktokUsername).emit('stream_status', { isLive: false }));
     connection.on('disconnected', () => {
         io.to(tiktokUsername).emit('stream_status', { isLive: false });
-        activeTikTokStreams.delete(tiktokUsername); // Очищаем мертвые соединения
+        activeTikTokStreams.delete(tiktokUsername); 
     });
 
     try {
       const state = await connection.connect();
       
-      // Ищем РЕАЛЬНОЕ количество подписчиков в объекте состояния трансляции
-      const followerCount = state.roomInfo?.owner?.follow_info?.follower_count || 
-                            state.up_info?.follower_count || 0;
+      const followerCount = state.roomInfo?.owner?.followInfo?.followerCount || 
+                            state.roomInfo?.owner?.follow_info?.follower_count || 0;
                             
       console.log(`[TikTok] Успешно! Стример ${tiktokUsername}. Подписчиков: ${followerCount}`);
                             
-      // Сохраняем в память сервера, чтобы новые подключения тоже могли его сразу получить                      
       const streamData = activeTikTokStreams.get(tiktokUsername);
       if (streamData) streamData.lastFollowerCount = followerCount;
 
       io.to(tiktokUsername).emit('stream_status', { 
           isLive: true, 
           roomId: state.roomId,
-          followerCount: followerCount // Передаем подписчиков в виджет
+          followerCount: followerCount 
       });
     } catch (err) {
       console.error(`[TikTok Connect Error - ${tiktokUsername}]:`, err.message);
@@ -148,7 +145,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-// Явно указываем 0.0.0.0, это необходимо для корректного роутинга в Railway
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 widg.space Server запущен на порту ${PORT}`);
 });
