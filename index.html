@@ -1,936 +1,631 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import * as Icons from "lucide-react";
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>widg.space - Виджеты для TikTok Live</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: '#0e1621',
+                        foreground: '#e8edf2',
+                        card: '#17212b',
+                        primary: '#3da9de',
+                        secondary: '#1e2c3a',
+                        muted: '#1e2c3a',
+                        border: 'rgba(255, 255, 255, 0.07)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #0e1621; color: #e8edf2; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .checker-bg {
+            background-image: linear-gradient(45deg,#1e2c3a 25%,transparent 25%), linear-gradient(-45deg,#1e2c3a 25%,transparent 25%), linear-gradient(45deg,transparent 75%,#1e2c3a 75%), linear-gradient(-45deg,transparent 75%,#1e2c3a 75%);
+            background-size: 14px 14px;
+            background-position: 0 0,0 7px,7px -7px,-7px 0px;
+            background-color: #141f2a;
+        }
+        .loader { border: 3px solid rgba(255,255,255,0.1); border-top-color: #3da9de; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="overflow-hidden flex h-screen w-full">
 
-// ── Supabase Configuration (REST API) ───────────────────────────────────────
-const SUPABASE_URL = 'https://lqjagftaeejdufwwvjwd.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_6-9IBhMX9CMVbIackZAJ9g_UUk5FDqx';
+    <nav class="hidden md:flex flex-col w-64 border-r border-border bg-card/50 p-4 h-full" id="sidebar"></nav>
 
-async function supabaseFetch(endpoint: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('sb_access_token') || SUPABASE_KEY;
-  const headers = {
-    'apikey': SUPABASE_KEY,
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-    ...(options.headers || {})
-  };
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, { ...options, headers });
-  if (!response.ok) {
-    throw new Error(`Supabase request failed: ${response.statusText}`);
-  }
-  if (response.status === 204) return null;
-  return response.json();
-}
+    <main class="flex-1 overflow-y-auto relative pb-24 md:pb-8 flex flex-col" id="main-content">
+        <div class="flex h-full items-center justify-center"><div class="loader"></div></div>
+    </main>
 
-async function supabaseAuth(endpoint: string, body: any) {
-  const response = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body)
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error_description || data.msg || 'Ошибка авторизации');
-  return data;
-}
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 border-t border-border flex items-center justify-around px-2 pt-2 pb-5 bg-[#0e1621]/90 backdrop-blur-xl z-30" id="bottom-bar"></nav>
 
-// ── Types ──────────────────────────────────────────────────────────────────
-interface Widget {
-  id: number;
-  name: string;
-  category: string;
-  icon_name: string;
-  gradient: string;
-  installs: number;
-  rating: number;
-  reviews: number;
-  author: string;
-  description: string;
-  tags: string[];
-  code_content?: string; 
-  is_new?: boolean;
-  is_featured?: boolean;
-  is_premium?: boolean;
-}
+    <div id="modal-container"></div>
+    <div id="stats-modal-container"></div>
 
-const CATEGORIES = [
-  "Все", "Алерты", "Чат", "Донаты", "Цели",
-  "Таймер", "Игры", "Музыка", "Статистика", "Эффекты", "Опросы", "Погода",
-];
+    <script>
+        const SUPABASE_URL = 'https://lqjagftaeejdufwwvjwd.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_6-9IBhMX9CMVbIackZAJ9g_UUk5FDqx';
 
-const GRADIENTS = [
-  "linear-gradient(135deg,#f97316,#ef4444)", "linear-gradient(135deg,#3b82f6,#06b6d4)",
-  "linear-gradient(135deg,#ec4899,#8b5cf6)", "linear-gradient(135deg,#10b981,#059669)",
-  "linear-gradient(135deg,#8b5cf6,#6d28d9)", "linear-gradient(135deg,#eab308,#f97316)",
-];
-
-const CHECKER = {
-  backgroundImage: "linear-gradient(45deg,#1e2c3a 25%,transparent 25%), linear-gradient(-45deg,#1e2c3a 25%,transparent 25%), linear-gradient(45deg,transparent 75%,#1e2c3a 75%), linear-gradient(-45deg,transparent 75%,#1e2c3a 75%)",
-  backgroundSize: "14px 14px",
-  backgroundPosition: "0 0,0 7px,7px -7px,-7px 0px",
-  backgroundColor: "#141f2a",
-};
-
-const fmtInstalls = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-
-// ── Icons Helper ─────────────────────────────────────────────────────────
-function CategoryIcon({ cat }: { cat: string }) {
-  const map: Record<string, keyof typeof Icons> = {
-    "Алерты": "Zap", "Чат": "MessageCircle", "Донаты": "Gift", "Цели": "Target",
-    "Таймер": "Clock", "Игры": "Gamepad2", "Музыка": "Music2", "Статистика": "BarChart2",
-    "Эффекты": "Sparkles", "Опросы": "BarChart", "Погода": "Cloud",
-  };
-  const iconName = map[cat] ?? "LayoutGrid";
-  const Icon = (Icons as any)[iconName] || Icons.LayoutGrid;
-  return <Icon size={14} />;
-}
-
-// ── Main App ───────────────────────────────────────────────────────────────
-export default function App() {
-  const [activeNav, setActiveNav] = useState<"home" | "installed" | "profile" | "upload" | "auth">("home");
-  const [activeCategory, setActiveCategory] = useState("Все");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedWidget, setSelectedWidget] = useState<Widget | null>(null);
-  
-  // App States
-  const [userId, setUserId] = useState<string | null>(null);
-  const [tiktokUsername, setTiktokUsername] = useState<string>("");
-  
-  const [widgets, setWidgets] = useState<Widget[]>([]);
-  const [installedIds, setInstalledIds] = useState<Set<number>>(new Set());
-  const [copiedId, setCopiedId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [platformUsername, setPlatformUsername] = useState<string>("");
-
-  // Upload State
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadForm, setUploadForm] = useState({ name: "", category: "Алерты", desc: "", code: "" });
-
-  // Auth State
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [authForm, setAuthForm] = useState({ email: "", password: "" });
-  const [authError, setAuthError] = useState("");
-  const [authLoading, setAuthLoading] = useState(false);
-
-  const catScrollRef = useRef<HTMLDivElement>(null);
-
-  // 1. Initial Load
-  useEffect(() => {
-    const initApp = async () => {
-      const storedToken = localStorage.getItem('sb_access_token');
-      const storedUid = localStorage.getItem('sb_user_id');
-      
-      if (storedToken && storedUid) {
-        setUserId(storedUid);
-        
-        // Получаем профиль пользователя
-        try {
-          const profileData = await supabaseFetch(`stream_users?select=*&id=eq.${storedUid}`);
-          if (profileData && profileData.length > 0) {
-              setPlatformUsername(profileData[0].platform_username || '');
-              setTiktokUsername(profileData[0].tiktok_username || '');
-          } else {
-              await supabaseFetch('stream_users', { method: 'POST', body: JSON.stringify({ id: storedUid }) });
-          }
-        } catch (e) {
-          console.error("Ошибка загрузки профиля:", e);
+        async function supabaseFetch(endpoint, options = {}) {
+            const token = localStorage.getItem('sb_access_token') || SUPABASE_KEY;
+            const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...options.headers };
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, { ...options, headers });
+            if (!response.ok) {
+                if (response.status === 401) handleLogout();
+                throw new Error(`Ошибка: ${response.statusText}`);
+            }
+            if (response.status === 204) return null;
+            return response.json();
         }
 
-        await fetchWidgetsAndInstalls(storedUid);
-      } else {
-        // Загружаем только публичные виджеты для гостей
-        await fetchPublicWidgets();
-      }
+        async function supabaseAuth(endpoint, body) {
+            const response = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+                method: 'POST',
+                headers: { 'apikey': SUPABASE_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error_description || data.msg || 'Ошибка авторизации');
+            return data;
+        }
 
-      const storedUsername = localStorage.getItem('tiktok_username');
-      if (storedUsername && !tiktokUsername) setTiktokUsername(storedUsername);
-    };
+        const CATEGORIES = ["Все", "Алерты", "Чат", "Донаты", "Цели", "Таймер", "Игры", "Музыка", "Статистика", "Эффекты", "Опросы", "Погода"];
+        const GRADIENTS = ["linear-gradient(135deg,#f97316,#ef4444)", "linear-gradient(135deg,#3b82f6,#06b6d4)", "linear-gradient(135deg,#ec4899,#8b5cf6)", "linear-gradient(135deg,#10b981,#059669)", "linear-gradient(135deg,#8b5cf6,#6d28d9)", "linear-gradient(135deg,#eab308,#f97316)"];
+        const ICONS_MAP = { "Алерты": "zap", "Чат": "message-circle", "Донаты": "gift", "Цели": "target", "Таймер": "clock", "Игры": "gamepad-2", "Музыка": "music-2", "Статистика": "bar-chart-2", "Эффекты": "sparkles", "Опросы": "bar-chart", "Погода": "cloud", "Все": "layout-grid" };
 
-    initApp();
-  }, []);
+        let state = {
+            activeNav: 'home', 
+            userId: localStorage.getItem('sb_user_id'),
+            tiktokUsername: '',
+            platformUsername: '',
+            widgets: [],
+            installedIds: new Set(),
+            searchQuery: '',
+            activeCategory: 'Все',
+            selectedWidget: null,
+            statsWidget: null,
+            copiedId: null,
+            isLoginMode: true,
+            authError: '',
+            isUploading: false
+        };
 
-  const fetchPublicWidgets = async () => {
-    setLoading(true);
-    try {
-      // ДОБАВИЛИ code_content и creator_id в выборку
-      const widgetsData = await supabaseFetch('stream_widgets?select=id,name,category,icon_name,gradient,author,description,installs,rating,reviews,tags,is_new,code_content,creator_id&order=created_at.desc');
-      if (widgetsData) setWidgets(widgetsData as Widget[]);
-    } catch (error) {
-      console.error("Ошибка загрузки виджетов:", error);
-    }
-    setLoading(false);
-  };
+        const fmtInstalls = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n;
 
-  const fetchWidgetsAndInstalls = async (uid: string) => {
-    setLoading(true);
-    try {
-      // ДОБАВИЛИ code_content и creator_id в выборку
-      const widgetsData = await supabaseFetch('stream_widgets?select=id,name,category,icon_name,gradient,author,description,installs,rating,reviews,tags,is_new,code_content,creator_id&order=created_at.desc');
-      if (widgetsData) setWidgets(widgetsData as Widget[]);
+        async function initApp() {
+            try {
+                const widgetsData = await supabaseFetch('stream_widgets?select=id,name,category,icon_name,gradient,author,description,installs,rating,reviews,tags,is_new,creator_id&order=created_at.desc');
+                if (widgetsData) state.widgets = widgetsData;
 
-      const installsData = await supabaseFetch(`stream_user_installs?select=widget_id&user_id=eq.${uid}`);
-      if (installsData) {
-        setInstalledIds(new Set(installsData.map((i: any) => i.widget_id)));
-      }
-    } catch (error) {
-      console.error("Ошибка загрузки данных:", error);
-      // Если токен протух, очищаем сессию
-      if (error instanceof Error && error.message.includes('401')) {
-        handleLogout();
-      }
-    }
-    setLoading(false);
-  };
+                if (state.userId) {
+                    const profileData = await supabaseFetch(`stream_users?select=*&id=eq.${state.userId}`);
+                    if (profileData && profileData.length > 0) {
+                        state.platformUsername = profileData[0].platform_username || '';
+                        state.tiktokUsername = profileData[0].tiktok_username || '';
+                    } else {
+                        await supabaseFetch('stream_users', { method: 'POST', body: JSON.stringify({ id: state.userId }) });
+                    }
 
-  const filteredWidgets = useMemo(() => {
-    let list = activeNav === "installed" ? widgets.filter(w => installedIds.has(w.id)) : widgets;
-    if (activeNav === "home" || activeNav === "upload") {
-      if (activeCategory !== "Все") list = list.filter(w => w.category === activeCategory);
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        list = list.filter(w =>
-          w.name.toLowerCase().includes(q) || w.category.toLowerCase().includes(q)
-        );
-      }
-    }
-    return list;
-  }, [activeNav, activeCategory, searchQuery, installedIds, widgets]);
+                    const installsData = await supabaseFetch(`stream_user_installs?select=widget_id&user_id=eq.${state.userId}`);
+                    if (installsData) state.installedIds = new Set(installsData.map(i => i.widget_id));
+                }
+            } catch (err) { console.error("Ошибка инициализации:", err); }
+            renderAll();
+        }
 
-  // Auth Handlers
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError("");
-    setAuthLoading(true);
+        function renderAll() {
+            renderSidebar(); renderBottomBar(); renderMain(); renderModal(); renderStatsModal(); lucide.createIcons();
+        }
 
-    try {
-      const endpoint = isLoginMode ? 'token?grant_type=password' : 'signup';
-      const data = await supabaseAuth(endpoint, {
-        email: authForm.email,
-        password: authForm.password
-      });
+        function renderSidebar() {
+            const sb = document.getElementById('sidebar');
+            const navs = [
+                { id: "home", icon: "home", label: "Каталог виджетов" },
+                ...(state.userId ? [
+                    { id: "installed", icon: "bookmark", label: "Мои виджеты", badge: state.installedIds.size },
+                    { id: "upload", icon: "code", label: "Создать виджет" },
+                    { id: "profile", icon: "user-circle-2", label: "Настройки профиля" }
+                ] : [])
+            ];
 
-      if (data.session || data.access_token) {
-        const token = data.session?.access_token || data.access_token;
-        const uid = data.user?.id;
-        
-        localStorage.setItem('sb_access_token', token);
-        localStorage.setItem('sb_user_id', uid);
-        
-        setUserId(uid);
-        setActiveNav("home");
-        await fetchWidgetsAndInstalls(uid);
-      } else if (!isLoginMode && data.user) {
-        setAuthError("Регистрация успешна! (Если включено подтверждение по email, проверьте почту). Попробуйте войти.");
-        setIsLoginMode(true);
-      }
-    } catch (err: any) {
-      setAuthError(err.message);
-    }
-    setAuthLoading(false);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('sb_access_token');
-    localStorage.removeItem('sb_user_id');
-    setUserId(null);
-    setInstalledIds(new Set());
-    setActiveNav("home");
-  };
-
-  // Sync installs
-  const handleInstall = async (id: number, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (!userId) {
-      setActiveNav("auth");
-      setSelectedWidget(null);
-      return;
-    }
-
-    const next = new Set(installedIds);
-    const isAdding = !next.has(id);
-
-    try {
-      if (isAdding) {
-        next.add(id);
-        await supabaseFetch('stream_user_installs', {
-          method: 'POST',
-          body: JSON.stringify({ user_id: userId, widget_id: id })
-        });
-      } else {
-        next.delete(id);
-        await supabaseFetch(`stream_user_installs?user_id=eq.${userId}&widget_id=eq.${id}`, {
-          method: 'DELETE'
-        });
-      }
-      setInstalledIds(next);
-    } catch (error) {
-      console.error("Ошибка обновления:", error);
-    }
-  };
-
-  // Upload custom widget
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userId) return;
-    
-    if (!uploadForm.code.trim()) {
-      alert("Код виджета не может быть пустым!");
-      return;
-    }
-    
-    setIsUploading(true);
-
-    const iconMap: Record<string, string> = {
-      "Алерты": "Zap", "Чат": "MessageCircle", "Донаты": "Gift", "Цели": "Target",
-      "Таймер": "Clock", "Игры": "Gamepad2", "Музыка": "Music2", "Статистика": "BarChart2",
-      "Эффекты": "Sparkles", "Опросы": "BarChart", "Погода": "Cloud",
-    };
-
-    const newWidget = {
-      name: uploadForm.name,
-      category: uploadForm.category,
-      description: uploadForm.desc,
-      author: platformUsername || tiktokUsername || "Анонимный Стример",
-      creator_id: userId,
-      icon_name: iconMap[uploadForm.category] || "Code",
-      gradient: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
-      code_content: uploadForm.code, 
-      tags: [],
-      is_new: true
-    };
-
-    try {
-      const data = await supabaseFetch('stream_widgets', {
-        method: 'POST',
-        headers: { 'Prefer': 'return=representation' },
-        body: JSON.stringify(newWidget)
-      });
-      
-      if (data && data.length > 0) {
-        setWidgets([data[0] as Widget, ...widgets]);
-        setActiveNav("home");
-        setUploadForm({ name: "", category: "Алерты", desc: "", code: "" });
-      }
-    } catch (error: any) {
-      alert("Ошибка при загрузке: " + error.message);
-    }
-    setIsUploading(false);
-  };
-
-  const handleCopy = (widget: Widget, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (!tiktokUsername) {
-      alert("Пожалуйста, укажите ваш TikTok Username в профиле для создания ссылки!");
-      return setActiveNav("profile");
-    }
-
-    const host = window.location.origin;
-    const finalUrl = `${host}/w/${widget.id}?user=${tiktokUsername}`;
-
-    const el = document.createElement('textarea');
-    el.value = finalUrl;
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand('copy');
-    document.body.removeChild(el);
-
-    setCopiedId(widget.id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const saveTiktokUsername = (val: string) => {
-    setTiktokUsername(val);
-    localStorage.setItem('tiktok_username', val);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen w-full flex justify-center items-center bg-background">
-        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
-          <Icons.Loader2 size={48} className="text-primary" />
-        </motion.div>
-      </div>
-    );
-  }
-
-  // --- Components for Sub-views ---
-  const Sidebar = () => (
-    <nav className="hidden md:flex flex-col w-64 border-r border-border bg-card/50 p-4 h-full">
-      <div className="flex items-center gap-3 mb-10 px-2 mt-2">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52] shadow-lg">
-          <Icons.Play size={20} fill="#fff" color="#fff" />
-        </div>
-        <div>
-          <h1 className="text-lg font-bold text-foreground leading-tight">StreamKit</h1>
-          <p className="text-xs text-muted-foreground leading-tight">TikTok Live Tools</p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2 flex-1">
-        <button
-          onClick={() => setActiveNav("home")}
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-            activeNav === "home" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
-          }`}
-        >
-          <Icons.Home size={18} />
-          <span className="text-sm">Каталог виджетов</span>
-        </button>
-
-        {userId ? (
-          <>
-            <button
-              onClick={() => setActiveNav("installed")}
-              className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
-                activeNav === "installed" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Icons.Bookmark size={18} />
-                <span className="text-sm">Мои виджеты</span>
-              </div>
-              {installedIds.size > 0 && (
-                <span className="bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">
-                  {installedIds.size}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveNav("upload")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeNav === "upload" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
-              }`}
-            >
-              <Icons.Code size={18} />
-              <span className="text-sm">Создать виджет</span>
-            </button>
-            <button
-              onClick={() => setActiveNav("profile")}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeNav === "profile" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
-              }`}
-            >
-              <Icons.User2 size={18} />
-              <span className="text-sm">Профиль и API</span>
-            </button>
-            
-            <div className="mt-auto pt-4 border-t border-border">
-              <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-red-400 hover:bg-red-400/10 transition-colors">
-                <Icons.LogOut size={18} />
-                <span className="text-sm font-medium">Выйти</span>
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="mt-auto pt-4 border-t border-border">
-            <button onClick={() => setActiveNav("auth")} className="flex items-center justify-center gap-2 px-4 py-3 w-full rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity">
-              <Icons.LogIn size={18} />
-              <span className="text-sm">Войти в аккаунт</span>
-            </button>
-          </div>
-        )}
-      </div>
-    </nav>
-  );
-
-  const BottomBar = () => (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t border-border flex items-center justify-around px-2 pt-2 pb-5 bg-background/90 backdrop-blur-xl z-30">
-      <button onClick={() => setActiveNav("home")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "home" ? "text-primary" : "text-muted-foreground"}`}>
-        <div className={`p-1.5 rounded-xl transition-all ${activeNav === "home" ? "bg-primary/15" : ""}`}><Icons.Home size={20} strokeWidth={activeNav === "home" ? 2.2 : 1.8} /></div>
-        <span className={`text-[10px] font-medium ${activeNav === "home" ? "text-primary" : ""}`}>Каталог</span>
-      </button>
-
-      {userId ? (
-        <>
-          <button onClick={() => setActiveNav("installed")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "installed" ? "text-primary" : "text-muted-foreground"}`}>
-            <div className={`p-1.5 rounded-xl transition-all ${activeNav === "installed" ? "bg-primary/15" : ""}`}><Icons.Bookmark size={20} strokeWidth={activeNav === "installed" ? 2.2 : 1.8} /></div>
-            <span className={`text-[10px] font-medium ${activeNav === "installed" ? "text-primary" : ""}`}>Мои</span>
-          </button>
-          <button onClick={() => setActiveNav("upload")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "upload" ? "text-primary" : "text-muted-foreground"}`}>
-            <div className={`p-1.5 rounded-xl transition-all ${activeNav === "upload" ? "bg-primary/15" : ""}`}><Icons.Code size={20} strokeWidth={activeNav === "upload" ? 2.2 : 1.8} /></div>
-            <span className={`text-[10px] font-medium ${activeNav === "upload" ? "text-primary" : ""}`}>Создать</span>
-          </button>
-          <button onClick={() => setActiveNav("profile")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "profile" ? "text-primary" : "text-muted-foreground"}`}>
-            <div className={`p-1.5 rounded-xl transition-all ${activeNav === "profile" ? "bg-primary/15" : ""}`}><Icons.User2 size={20} strokeWidth={activeNav === "profile" ? 2.2 : 1.8} /></div>
-            <span className={`text-[10px] font-medium ${activeNav === "profile" ? "text-primary" : ""}`}>Профиль</span>
-          </button>
-        </>
-      ) : (
-        <button onClick={() => setActiveNav("auth")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "auth" ? "text-primary" : "text-muted-foreground"}`}>
-          <div className={`p-1.5 rounded-xl transition-all ${activeNav === "auth" ? "bg-primary/15" : ""}`}><Icons.LogIn size={20} strokeWidth={activeNav === "auth" ? 2.2 : 1.8} /></div>
-          <span className={`text-[10px] font-medium ${activeNav === "auth" ? "text-primary" : ""}`}>Войти</span>
-        </button>
-      )}
-    </nav>
-  );
-
-  return (
-    <div className="flex h-screen w-full bg-background overflow-hidden">
-      <Sidebar />
-
-      <main className="flex-1 overflow-y-auto relative pb-24 md:pb-8 flex flex-col">
-        
-        <header className="md:hidden flex items-center justify-between px-5 py-4 border-b border-border/50 sticky top-0 bg-background/90 backdrop-blur z-20">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52]">
-              <Icons.Play size={14} fill="#fff" color="#fff" />
-            </div>
-            <h1 className="text-sm font-bold text-foreground">StreamKit</h1>
-          </div>
-        </header>
-
-        <div className="max-w-6xl w-full mx-auto p-4 md:p-8 flex-1">
-          {/* ── AUTH VIEW ── */}
-          {activeNav === "auth" && (
-            <div className="max-w-md mx-auto py-12">
-              <div className="text-center mb-8">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52] shadow-xl mx-auto mb-5">
-                  <Icons.Play size={32} fill="#fff" color="#fff" />
-                </div>
-                <h2 className="text-2xl font-bold text-foreground">
-                  {isLoginMode ? "С возвращением!" : "Создать аккаунт"}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Для сохранения виджетов и генерации ссылок для OBS требуется авторизация.
-                </p>
-              </div>
-
-              <form onSubmit={handleAuthSubmit} className="bg-card border border-border rounded-3xl p-6 md:p-8 shadow-sm">
-                {authError && (
-                  <div className="bg-red-500/10 border border-red-500/20 text-red-500 text-sm px-4 py-3 rounded-xl mb-5">
-                    {authError}
-                  </div>
-                )}
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
-                    <input 
-                      required type="email" value={authForm.email} 
-                      onChange={e => setAuthForm({...authForm, email: e.target.value})} 
-                      className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:border-primary outline-none" 
-                      placeholder="streamer@example.com" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Пароль</label>
-                    <input 
-                      required type="password" value={authForm.password} 
-                      onChange={e => setAuthForm({...authForm, password: e.target.value})} 
-                      className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:border-primary outline-none" 
-                      placeholder="••••••••" 
-                    />
-                  </div>
-                </div>
-                
-                <button disabled={authLoading} type="submit" className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
-                  {authLoading ? "Загрузка..." : (isLoginMode ? "Войти в систему" : "Зарегистрироваться")}
-                </button>
-
-                <div className="mt-6 text-center">
-                  <button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(""); }} className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                    {isLoginMode ? "Нет аккаунта? Создать новый" : "Уже есть аккаунт? Войти"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* ── HOME & INSTALLED VIEWS ── */}
-          {(activeNav === "home" || activeNav === "installed") && (
-            <>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground tracking-tight">
-                    {activeNav === "home" ? "Каталог виджетов" : "Моя библиотека"}
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {activeNav === "home" ? "Универсальные оверлеи для TikTok Live, работающие на нашем API" : "Виджеты, добавленные в ваш аккаунт"}
-                  </p>
-                </div>
-                
-                {activeNav === "home" && (
-                  <div className="relative w-full md:w-72">
-                    <Icons.Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      placeholder="Поиск..."
-                      className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {activeNav === "home" && (
-                <div ref={catScrollRef} className="flex gap-2 pb-6 overflow-x-auto scrollbar-hide">
-                  {CATEGORIES.map(cat => (
-                    <button
-                      key={cat}
-                      onClick={() => setActiveCategory(cat)}
-                      className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-                        activeCategory === cat ? "bg-primary text-primary-foreground shadow-md" : "bg-card border border-border text-muted-foreground hover:bg-secondary"
-                      }`}
-                    >
-                      {cat !== "Все" && <CategoryIcon cat={cat} />}
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {filteredWidgets.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center bg-card rounded-3xl border border-border">
-                  <Icons.LayoutGrid size={48} className="text-muted-foreground opacity-30 mb-4" />
-                  <p className="text-base font-semibold text-foreground">Ничего не найдено</p>
-                  <p className="text-sm text-muted-foreground mt-1">Попробуйте изменить категорию или поисковый запрос</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
-                  {filteredWidgets.map(widget => {
-                    const isInstalled = installedIds.has(widget.id);
-                    const Icon = (Icons as any)[widget.icon_name] || Icons.LayoutGrid;
-                    
-                    return (
-                      <motion.div
-                        key={widget.id}
-                        whileHover={{ y: -4 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => setSelectedWidget(widget)}
-                        className="bg-card rounded-2xl overflow-hidden border border-border cursor-pointer group flex flex-col"
-                      >
-                        <div className="relative h-28 md:h-36 w-full flex-shrink-0" style={CHECKER}>
-                          <div className="absolute inset-0 opacity-20" style={{ background: widget.gradient }} />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform" style={{ background: widget.gradient }}>
-                              <Icon size={24} color="#fff" strokeWidth={1.8} />
-                            </div>
-                          </div>
-                          {widget.is_new && (
-                            <span className="absolute top-2 left-2 bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-md border border-emerald-500/30">New</span>
-                          )}
-                        </div>
-                        
-                        <div className="p-3 md:p-4 flex flex-col flex-1">
-                          <h3 className="text-xs md:text-sm font-semibold text-foreground leading-tight line-clamp-2 mb-1 md:mb-2">{widget.name}</h3>
-                          <div className="flex items-center gap-1 mb-auto">
-                            <span className="text-[10px] md:text-xs text-muted-foreground">{widget.author}</span>
-                          </div>
-                          
-                          <div className="flex items-center justify-between mt-3">
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Icons.Download size={12} />
-                              <span className="text-[10px] md:text-xs">{fmtInstalls(widget.installs)}</span>
-                            </div>
-                            <button
-                              onClick={e => handleInstall(widget.id, e)}
-                              className={`text-[10px] md:text-xs font-semibold px-2.5 md:px-3 py-1.5 rounded-lg transition-all ${
-                                isInstalled ? "bg-emerald-500/20 text-emerald-400" : "bg-primary/20 text-primary hover:bg-primary hover:text-white"
-                              }`}
-                            >
-                              {isInstalled ? "Добавлен" : "Добавить"}
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── UPLOAD VIEW (Code Input) ── */}
-          {activeNav === "upload" && userId && (
-            <div className="max-w-3xl mx-auto py-4">
-               <div className="mb-8 text-center">
-                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                    <Icons.Code2 size={28} className="text-primary" />
-                 </div>
-                 <h2 className="text-2xl font-bold text-foreground">Создать и захостить виджет</h2>
-                 <p className="text-sm text-muted-foreground mt-2">
-                   Вставьте ваш HTML/JS код ниже. Наш сервис сохранит его и будет выступать хостингом для виджета.
-                 </p>
-               </div>
-
-               <form onSubmit={handleUpload} className="bg-card border border-border rounded-3xl p-6 md:p-8 space-y-5">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                   <div>
-                     <label className="block text-sm font-medium text-foreground mb-1.5">Название виджета</label>
-                     <input required value={uploadForm.name} onChange={e => setUploadForm({...uploadForm, name: e.target.value})} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:border-primary outline-none" placeholder="Дождь из роз..." />
-                   </div>
-                   <div>
-                     <label className="block text-sm font-medium text-foreground mb-1.5">Категория</label>
-                     <select value={uploadForm.category} onChange={e => setUploadForm({...uploadForm, category: e.target.value})} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:border-primary outline-none">
-                       {CATEGORIES.filter(c => c !== "Все").map(c => <option key={c} value={c}>{c}</option>)}
-                     </select>
-                   </div>
-                 </div>
-                 <div>
-                   <label className="block text-sm font-medium text-foreground mb-1.5">Описание</label>
-                   <textarea required value={uploadForm.desc} onChange={e => setUploadForm({...uploadForm, desc: e.target.value})} className="w-full h-20 bg-background border border-border rounded-xl px-4 py-3 text-sm focus:border-primary outline-none resize-none" placeholder="Опишите, что делает ваш виджет..."></textarea>
-                 </div>
-                 <div>
-                   <label className="block text-sm font-medium text-foreground mb-1.5 flex justify-between">
-                     <span>Исходный код (HTML + JS + CSS)</span>
-                     <span className="text-xs text-muted-foreground font-normal">Будет доступен по ссылке /w/ID</span>
-                   </label>
-                   <textarea 
-                     required 
-                     value={uploadForm.code} 
-                     onChange={e => setUploadForm({...uploadForm, code: e.target.value})} 
-                     className="w-full h-64 bg-background border border-border rounded-xl px-4 py-3 text-xs font-mono focus:border-primary outline-none resize-y text-green-400" 
-                     placeholder={`<!DOCTYPE html>\n<html>\n<head>\n  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>\n</head>\n<body>\n  <!-- Ваш код виджета -->\n</body>\n</html>`}
-                   ></textarea>
-                 </div>
-                 <button disabled={isUploading} type="submit" className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
-                   {isUploading ? "Сохранение и публикация..." : "Захостить виджет"}
-                 </button>
-               </form>
-            </div>
-          )}
-
-          {/* ── PROFILE & API DOCS VIEW ── */}
-          {activeNav === "profile" && userId && (
-            <div className="max-w-3xl mx-auto py-4 space-y-8">
-              <div className="bg-card rounded-3xl border border-border p-6 md:p-8 flex flex-col md:flex-row gap-6 md:items-center justify-between">
-                <div className="flex items-center gap-5">
-                  <div className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold text-white uppercase bg-gradient-to-r from-blue-500 to-purple-500 shadow-xl">
-                    {platformUsername ? platformUsername.charAt(0) : (tiktokUsername ? tiktokUsername.charAt(0) : "S")}
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-foreground">
-                      {platformUsername ? `@${platformUsername}` : (tiktokUsername ? `@${tiktokUsername}` : "Настройте аккаунт")}
-                    </h2>
-                    <p className="text-sm text-muted-foreground mt-1">ID: {userId?.slice(0,8)}...</p>
-                  </div>
-                </div>
-                
-                <div className="flex-1 max-w-lg space-y-4">
-                  <div className="bg-background rounded-2xl p-4 border border-border">
-                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">widg.space Username (Авторство)</label>
-                    <input
-                      value={platformUsername}
-                      onChange={e => setPlatformUsername(e.target.value)}
-                      placeholder="Например: SuperDev"
-                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm font-medium focus:border-primary outline-none"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-2 leading-tight">
-                      Будет отображаться как имя автора на всех ваших виджетах.
-                    </p>
-                  </div>
-                  <div className="bg-background rounded-2xl p-4 border border-border">
-                    <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Ваш TikTok Username</label>
-                    <input
-                      value={tiktokUsername}
-                      onChange={e => saveTiktokUsername(e.target.value)}
-                      placeholder="Например: jake_streamer"
-                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm font-medium focus:border-primary outline-none"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-2 leading-tight">
-                      Необходим для генерации персональных ссылок для OBS.
-                    </p>
-                  </div>
-                  <button
-                    onClick={async (e) => {
-                      const btn = e.currentTarget;
-                      const originalText = btn.innerText;
-                      btn.innerText = "Сохранение...";
-                      try {
-                        await supabaseFetch(`stream_users?id=eq.${userId}`, {
-                          method: 'PATCH',
-                          body: JSON.stringify({ platform_username: platformUsername, tiktok_username: tiktokUsername })
-                        });
-                        btn.className = "w-full md:w-auto px-6 py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-semibold transition-colors";
-                        btn.innerText = "Успешно сохранено!";
-                        setTimeout(() => {
-                          btn.className = "w-full md:w-auto px-6 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity";
-                          btn.innerText = originalText;
-                        }, 2500);
-                      } catch (err: any) {
-                        alert("Ошибка сохранения: " + err.message);
-                        btn.innerText = originalText;
-                      }
-                    }}
-                    className="w-full md:w-auto px-6 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
-                  >
-                    Сохранить изменения
-                  </button>
-                </div>
-              </div>
-
-              {/* API Documentation */}
-              <div className="bg-card rounded-3xl border border-border p-6 md:p-8">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
-                    <Icons.Code2 size={20} />
-                  </div>
-                  <h3 className="text-xl font-bold text-foreground">API для разработчиков виджетов</h3>
-                </div>
-
-                <div className="prose prose-invert prose-sm max-w-none space-y-4 text-muted-foreground">
-                  <p>
-                    Все виджеты размещаются на нашем сервере. При вставке в OBS к ссылке будет добавлен параметр <code>?user=ИМЯ_СТРИМЕРА</code>. Ваш код должен прочитать этот параметр и подключиться к нашему вебсокету.
-                  </p>
-                  
-                  <h4 className="text-foreground font-semibold text-base mt-6">Пример базового виджета</h4>
-                  <pre className="bg-background p-4 rounded-xl border border-border overflow-x-auto">
-                    <code className="text-xs text-blue-400">
-{`<!DOCTYPE html>
-<html>
-<head>
-  <!-- Подключаем Socket.io -->
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-</head>
-<body>
-  <div id="container"></div>
-
-  <script>
-    // 1. Получаем username из URL параметров
-    const urlParams = new URLSearchParams(window.location.search);
-    const username = urlParams.get('user');
-
-    // 2. Подключаемся к нашему серверу (он же раздает этот файл)
-    const socket = io(window.location.origin);
-
-    socket.on("connect", () => {
-        // Подписываемся на события стримера
-        socket.emit("join_stream", username);
-    });
-
-    // 3. Слушаем события
-    socket.on("chat_message", (data) => {
-        const div = document.createElement("div");
-        div.innerText = data.nickname + ": " + data.comment;
-        document.getElementById("container").appendChild(div);
-    });
-  </script>
-</body>
-</html>`}
-                    </code>
-                  </pre>
-
-                  <h4 className="text-foreground font-semibold text-base mt-6">События (Events)</h4>
-                  <div className="space-y-3">
-                    <div className="bg-background p-3 rounded-xl border border-border">
-                      <p className="text-emerald-400 font-mono text-xs mb-1">stream_status</p>
-                      <p className="text-xs">Вызывается при подключении и смене статуса. <code>{`{ isLive: boolean, error?: string }`}</code></p>
-                    </div>
-                    <div className="bg-background p-3 rounded-xl border border-border">
-                      <p className="text-emerald-400 font-mono text-xs mb-1">chat_message</p>
-                      <p className="text-xs">Новое сообщение. <code>{`{ nickname, comment, profilePictureUrl }`}</code></p>
-                    </div>
-                    <div className="bg-background p-3 rounded-xl border border-border">
-                      <p className="text-emerald-400 font-mono text-xs mb-1">gift_received</p>
-                      <p className="text-xs">Подарки (после комбо). <code>{`{ giftName, diamondCount, repeatCount }`}</code></p>
-                    </div>
-                    <div className="bg-background p-3 rounded-xl border border-border">
-                      <p className="text-emerald-400 font-mono text-xs mb-1">like_received</p>
-                      <p className="text-xs">Лайки от зрителей. <code>{`{ likeCount, totalLikes }`}</code></p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-        </div>
-      </main>
-
-      <BottomBar />
-
-      {/* ── WIDGET DETAILS MODAL ── */}
-      <AnimatePresence>
-        {selectedWidget && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setSelectedWidget(null)}
-              className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="fixed z-50 left-0 right-0 bottom-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 w-full md:w-[500px] bg-card md:rounded-3xl rounded-t-3xl border border-border overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
-            >
-              <div className="md:hidden flex justify-center pt-3 pb-2 bg-card">
-                <div className="w-12 h-1.5 bg-border rounded-full" />
-              </div>
-
-              <div className="overflow-y-auto p-5 md:p-6 scrollbar-hide">
-                <div className="flex items-start justify-between mb-5">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg" style={{ background: selectedWidget.gradient }}>
-                       {React.createElement((Icons as any)[selectedWidget.icon_name] || Icons.Code, { size: 30, color: "#fff" })}
+            sb.innerHTML = `
+                <div class="flex items-center gap-3 mb-10 px-2 mt-2">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52] shadow-lg">
+                        <i data-lucide="play" class="text-white w-5 h-5"></i>
                     </div>
                     <div>
-                      <h2 className="font-bold text-lg text-foreground leading-tight">{selectedWidget.name}</h2>
-                      <p className="text-sm text-muted-foreground mt-1">от {selectedWidget.author}</p>
+                        <h1 class="text-lg font-bold leading-tight">widg.space</h1>
+                        <p class="text-xs text-slate-400 leading-tight">TikTok Live Tools</p>
                     </div>
-                  </div>
-                  <button onClick={() => setSelectedWidget(null)} className="p-2 rounded-full bg-secondary text-muted-foreground hover:bg-secondary/80">
-                    <Icons.X size={18} />
-                  </button>
                 </div>
-
-                <div className="relative h-48 w-full rounded-2xl overflow-hidden mb-5" style={CHECKER}>
-                   <div className="absolute inset-0 opacity-20" style={{ background: selectedWidget.gradient }} />
-                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                      <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transform scale-110" style={{ background: selectedWidget.gradient }}>
-                        {React.createElement((Icons as any)[selectedWidget.icon_name] || Icons.Code, { size: 32, color: "#fff" })}
-                      </div>
-                      <span className="text-xs text-white/70 font-mono uppercase tracking-widest px-3 py-1 bg-black/40 rounded-full backdrop-blur-md">Прозрачный фон для OBS</span>
-                   </div>
-                </div>
-
-                <p className="text-sm text-foreground/80 leading-relaxed mb-6">
-                  {selectedWidget.description || "Оверлей для отображения активности на вашем стриме TikTok. Подходит для OBS и Streamlabs."}
-                </p>
-
-                {userId ? (
-                  <div className="bg-background rounded-2xl p-4 border border-border mb-6">
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Ссылка для Browser Source</h3>
-                    <div className="flex gap-2">
-                      <code className="text-xs text-muted-foreground flex-1 truncate bg-card border border-border px-3 py-2.5 rounded-xl font-mono flex items-center">
-                        {tiktokUsername 
-                          ? `${window.location.origin}/w/${selectedWidget.id}?user=${tiktokUsername}` 
-                          : "Сначала укажите Username в профиле"}
-                      </code>
-                      <button
-                        onClick={(e) => handleCopy(selectedWidget, e)}
-                        className="shrink-0 w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
-                      >
-                        {copiedId === selectedWidget.id ? <Icons.Check size={16} /> : <Icons.Copy size={16} />}
-                      </button>
+                <div class="flex flex-col gap-2 flex-1">
+                    ${navs.map(n => `
+                        <button data-nav="${n.id}" class="flex items-center justify-between px-4 py-3 rounded-xl transition-all ${state.activeNav === n.id ? 'bg-[#3da9de]/10 text-[#3da9de] font-semibold' : 'text-slate-400 hover:bg-[#1e2c3a]'}">
+                            <div class="flex items-center gap-3"><i data-lucide="${n.icon}" class="w-[18px] h-[18px]"></i><span class="text-sm">${n.label}</span></div>
+                            ${n.badge ? `<span class="bg-[#3da9de]/20 text-[#3da9de] text-[10px] px-2 py-0.5 rounded-full font-bold">${n.badge}</span>` : ''}
+                        </button>
+                    `).join('')}
+                    <div class="mt-auto pt-4 border-t border-border">
+                        ${state.userId ? `<button data-action="logout" class="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-red-400 hover:bg-red-400/10 transition-colors"><i data-lucide="log-out" class="w-[18px] h-[18px]"></i><span class="text-sm font-medium">Выйти</span></button>` : `<button data-nav="auth" class="flex items-center justify-center gap-2 px-4 py-3 w-full rounded-xl bg-[#3da9de] text-white font-semibold hover:opacity-90 transition-opacity"><i data-lucide="log-in" class="w-[18px] h-[18px]"></i><span class="text-sm">Войти</span></button>`}
                     </div>
-                  </div>
-                ) : (
-                  <div className="bg-background/50 rounded-2xl p-4 border border-border mb-6 text-center">
-                    <p className="text-sm text-muted-foreground">Авторизуйтесь, чтобы получить ссылку для OBS</p>
-                  </div>
-                )}
+                </div>
+            `;
+        }
 
-                <button
-                  onClick={(e) => handleInstall(selectedWidget.id, e)}
-                  className={`w-full py-4 rounded-xl font-bold text-sm transition-all shadow-lg ${
-                    !userId ? "bg-primary text-white" :
-                    installedIds.has(selectedWidget.id)
-                      ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-                      : "text-white"
-                  }`}
-                  style={userId && !installedIds.has(selectedWidget.id) ? { background: selectedWidget.gradient } : {}}
-                >
-                  {!userId ? "Войти чтобы добавить" : (installedIds.has(selectedWidget.id) ? "✓ Добавлен в библиотеку" : "Добавить в мои виджеты")}
+        function renderBottomBar() {
+            const bb = document.getElementById('bottom-bar');
+            const navs = [
+                { id: "home", icon: "home", label: "Каталог" },
+                ...(state.userId ? [
+                    { id: "installed", icon: "bookmark", label: "Мои" },
+                    { id: "upload", icon: "code", label: "Создать" },
+                    { id: "profile", icon: "user-circle-2", label: "Профиль" }
+                ] : [{ id: "auth", icon: "log-in", label: "Войти" }])
+            ];
+
+            bb.innerHTML = navs.map(n => `
+                <button data-nav="${n.id}" class="flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${state.activeNav === n.id ? 'text-[#3da9de]' : 'text-slate-400'}">
+                    <div class="p-1.5 rounded-xl transition-all ${state.activeNav === n.id ? 'bg-[#3da9de]/15' : ''}">
+                        <i data-lucide="${n.icon}" class="w-5 h-5" stroke-width="${state.activeNav === n.id ? '2.2' : '1.8'}"></i>
+                    </div>
+                    <span class="text-[10px] font-medium ${state.activeNav === n.id ? 'text-[#3da9de]' : ''}">${n.label}</span>
                 </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            `).join('');
+        }
 
-    </div>
-  );
-}
+        function renderMain() {
+            const main = document.getElementById('main-content');
+            let content = '';
+
+            const mobileHeader = `
+                <header class="md:hidden flex items-center justify-between px-5 py-4 border-b border-border/50 sticky top-0 bg-[#0e1621]/90 backdrop-blur z-20">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52]"><i data-lucide="play" class="text-white w-3.5 h-3.5"></i></div>
+                        <h1 class="text-sm font-bold text-white">widg.space</h1>
+                    </div>
+                </header>
+            `;
+
+            if (state.activeNav === 'auth') {
+                content = `
+                    <div class="max-w-md mx-auto py-12 px-4 w-full">
+                        <div class="text-center mb-8">
+                            <div class="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52] shadow-xl mx-auto mb-5"><i data-lucide="play" class="text-white w-8 h-8"></i></div>
+                            <h2 class="text-2xl font-bold">${state.isLoginMode ? "С возвращением!" : "Создать аккаунт"}</h2>
+                            <p class="text-sm text-slate-400 mt-2">Присоединяйтесь к widg.space</p>
+                        </div>
+                        <form id="auth-form" class="bg-card border border-border rounded-3xl p-6 md:p-8 shadow-sm">
+                            ${state.authError ? `<div class="bg-red-500/10 border border-red-500/20 text-red-500 text-sm px-4 py-3 rounded-xl mb-5">${state.authError}</div>` : ''}
+                            <div class="space-y-4 mb-6">
+                                <div><label class="block text-sm font-medium mb-1.5">Email</label><input required type="email" id="auth-email" class="w-full bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none text-white" placeholder="streamer@example.com" /></div>
+                                <div><label class="block text-sm font-medium mb-1.5">Пароль</label><input required type="password" id="auth-password" class="w-full bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none text-white" placeholder="••••••••" /></div>
+                            </div>
+                            <button type="submit" class="w-full py-3.5 rounded-xl bg-[#3da9de] text-white font-semibold text-sm hover:opacity-90 transition-opacity">${state.isLoginMode ? "Войти в систему" : "Зарегистрироваться"}</button>
+                            <div class="mt-6 text-center"><button type="button" data-action="toggle-auth" class="text-sm text-slate-400 hover:text-[#3da9de] transition-colors">${state.isLoginMode ? "Нет аккаунта? Создать новый" : "Уже есть аккаунт? Войти"}</button></div>
+                        </form>
+                    </div>
+                `;
+            } else if (state.activeNav === 'home' || state.activeNav === 'installed') {
+                let list = state.activeNav === "installed" ? state.widgets.filter(w => state.installedIds.has(w.id)) : state.widgets;
+                if (state.activeNav === "home") {
+                    if (state.activeCategory !== "Все") list = list.filter(w => w.category === state.activeCategory);
+                    if (state.searchQuery) list = list.filter(w => w.name.toLowerCase().includes(state.searchQuery.toLowerCase()) || w.category.toLowerCase().includes(state.searchQuery.toLowerCase()));
+                }
+
+                content = `
+                    <div class="max-w-6xl w-full mx-auto p-4 md:p-8">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                            <div>
+                                <h2 class="text-2xl font-bold tracking-tight">${state.activeNav === "home" ? "Каталог виджетов" : "Моя библиотека"}</h2>
+                                <p class="text-sm text-slate-400 mt-1">${state.activeNav === "home" ? "Оверлеи для TikTok Live на платформе widg.space" : "Виджеты, добавленные в ваш аккаунт"}</p>
+                            </div>
+                            ${state.activeNav === "home" ? `
+                            <div class="relative w-full md:w-72">
+                                <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4"></i>
+                                <input id="search-input" value="${state.searchQuery}" placeholder="Поиск..." class="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-2 text-sm focus:border-[#3da9de] outline-none text-white" />
+                            </div>` : ''}
+                        </div>
+
+                        ${state.activeNav === "home" ? `
+                        <div class="flex gap-2 pb-6 overflow-x-auto scrollbar-hide">
+                            ${CATEGORIES.map(cat => `
+                                <button data-category="${cat}" class="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-all ${state.activeCategory === cat ? 'bg-[#3da9de] text-white shadow-md' : 'bg-card border border-border text-slate-400 hover:bg-[#1e2c3a]'}">
+                                    ${cat !== "Все" ? `<i data-lucide="${ICONS_MAP[cat] || 'layout-grid'}" class="w-3.5 h-3.5"></i>` : ''}${cat}
+                                </button>
+                            `).join('')}
+                        </div>` : ''}
+
+                        ${list.length === 0 ? `
+                        <div class="flex flex-col items-center justify-center py-20 text-center bg-card rounded-3xl border border-border">
+                            <i data-lucide="layout-grid" class="text-slate-500 opacity-30 mb-4 w-12 h-12"></i>
+                            <p class="text-base font-semibold">Ничего не найдено</p>
+                        </div>` : `
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
+                            ${list.map(widget => {
+                                const isInstalled = state.installedIds.has(widget.id);
+                                const iconName = widget.icon_name ? widget.icon_name.toLowerCase() : 'code';
+                                return `
+                                <div data-widget="${widget.id}" class="bg-card rounded-2xl overflow-hidden border border-border cursor-pointer group flex flex-col hover:-translate-y-1 transition-transform">
+                                    <div class="relative h-28 md:h-36 w-full flex-shrink-0 checker-bg">
+                                        <div class="absolute inset-0 opacity-20" style="background: ${widget.gradient}"></div>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <div class="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform" style="background: ${widget.gradient}"><i data-lucide="${iconName}" class="text-white w-6 h-6"></i></div>
+                                        </div>
+                                    </div>
+                                    <div class="p-3 md:p-4 flex flex-col flex-1">
+                                        <h3 class="text-xs md:text-sm font-semibold leading-tight line-clamp-2 mb-1 md:mb-2">${widget.name}</h3>
+                                        <div class="flex items-center gap-1 mb-auto"><span class="text-[10px] md:text-xs text-slate-400">${widget.author}</span></div>
+                                        <div class="flex items-center justify-between mt-3">
+                                            <div class="flex items-center gap-1 text-slate-400"><i data-lucide="download" class="w-3 h-3"></i><span class="text-[10px] md:text-xs">${fmtInstalls(widget.installs)}</span></div>
+                                            <button data-install="${widget.id}" class="text-[10px] md:text-xs font-semibold px-2.5 md:px-3 py-1.5 rounded-lg transition-all ${isInstalled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#3da9de]/20 text-[#3da9de] hover:bg-[#3da9de] hover:text-white'}">${isInstalled ? 'Добавлен' : 'Добавить'}</button>
+                                        </div>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>`}
+                    </div>
+                `;
+            } else if (state.activeNav === 'upload') {
+                content = `
+                    <div class="max-w-4xl mx-auto py-4 px-4 w-full">
+                        <div class="mb-8 text-center">
+                            <div class="w-16 h-16 rounded-full bg-[#3da9de]/10 flex items-center justify-center mx-auto mb-4"><i data-lucide="code-2" class="text-[#3da9de] w-7 h-7"></i></div>
+                            <h2 class="text-2xl font-bold">Разработчикам: Создать виджет</h2>
+                            <p class="text-sm text-slate-400 mt-2">Опубликуйте ваш HTML код. Наш сервер widg.space бесплатно захостит его и предоставит WebSockets API.</p>
+                        </div>
+
+                        <!-- ФОРМА ЗАГРУЗКИ -->
+                        <form id="upload-form" class="bg-card border border-border rounded-3xl p-6 md:p-8 space-y-5 shadow-lg mb-12">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div><label class="block text-sm font-medium mb-1.5">Название виджета</label><input required id="up-name" class="w-full bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none text-white" placeholder="Супер Дождь из Роз" /></div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1.5">Категория</label>
+                                    <select id="up-category" class="w-full bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none text-white">
+                                        ${CATEGORIES.filter(c => c !== "Все").map(c => `<option value="${c}">${c}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+                            <div><label class="block text-sm font-medium mb-1.5">Краткое описание</label><textarea required id="up-desc" class="w-full h-16 bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none resize-none text-white"></textarea></div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1.5 flex justify-between"><span>Полный исходный код (HTML + JS + CSS)</span></label>
+                                <textarea required id="up-code" class="w-full h-80 bg-[#0e1621] border border-border rounded-xl px-4 py-4 text-xs font-mono focus:border-[#3da9de] outline-none resize-y text-emerald-400 leading-relaxed" placeholder="<!DOCTYPE html>\n<html>\n<head>\n  <script src=&quot;https://cdn.socket.io/4.7.2/socket.io.min.js&quot;><\/script>\n</head>\n<body>\n  <!-- Ваш код виджета -->\n</body>\n</html>"></textarea>
+                            </div>
+                            <button type="submit" ${state.isUploading ? 'disabled' : ''} class="w-full py-4 rounded-xl bg-[#3da9de] text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
+                                ${state.isUploading ? "Публикация..." : "Опубликовать виджет в каталог"}
+                            </button>
+                        </form>
+
+                        <!-- ДОКУМЕНТАЦИЯ API -->
+                        <div class="mt-12 bg-card rounded-3xl border border-border p-6 md:p-8">
+                            <h3 class="text-2xl font-bold mb-6 flex items-center gap-3"><i data-lucide="book-open" class="text-[#3da9de]"></i> Полная документация API widg.space</h3>
+                            <p class="text-slate-400 text-sm mb-6 leading-relaxed">Наш WebSocket-сервер автоматически перехватывает <b>абсолютно все</b> события оригинального API TikTok. Имя стримера (<b>user</b>) передается в URL-параметрах при добавлении в OBS.</p>
+                            
+                            <h4 class="font-bold text-lg text-white mb-3 mt-8">1. Базовое подключение</h4>
+                            <pre class="bg-[#0e1621] p-4 rounded-xl border border-border overflow-x-auto text-xs text-[#3da9de] leading-loose mb-8">
+&lt;script src="https://cdn.socket.io/4.7.2/socket.io.min.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+const username = new URLSearchParams(window.location.search).get('user');
+const socket = io(window.location.origin); // Сервер widg.space
+socket.on("connect", () => socket.emit("join_stream", username));
+socket.on("chat", (data) => console.log(data));
+&lt;/script&gt;</pre>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">💬 Чат и Общение</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">chat</p><p class="text-xs text-slate-400">Сообщения пользователей. Доступны: nickname, comment, userId, profilePictureUrl.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">emote</p><p class="text-xs text-slate-400">Отправка кастомных стикеров (эмодзи).</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">questionNew</p><p class="text-xs text-slate-400">Новый вопрос, заданный через функционал Q&A.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">roomPin</p><p class="text-xs text-slate-400">Сообщение закреплено модератором.</p></div>
+                            </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">🎁 Подарки и Финансы</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">gift</p><p class="text-xs text-slate-400">Отправка подарков (без спама). Содержит giftName, diamondCount, repeatCount, pictureUrl.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">envelope</p><p class="text-xs text-slate-400">Появление сундука с монетами на стриме.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">goalUpdate</p><p class="text-xs text-slate-400">Обновление прогресса цели стримера (Goal).</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">subscribe</p><p class="text-xs text-slate-400">Оформление платной подписки.</p></div>
+                            </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">👥 Зрители и Социалки</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">like</p><p class="text-xs text-slate-400">Лайки от зрителей. Возвращает likeCount и totalLikeCount.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">roomUser</p><p class="text-xs text-slate-400">Счетчик онлайна (viewerCount) и топ-гифтеры.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">member / follow / share</p><p class="text-xs text-slate-400">Вход зрителя, подписка и шеринг трансляции.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-emerald-400 font-mono text-sm mb-1">superFan</p><p class="text-xs text-slate-400">Действия "Супер-фанатов".</p></div>
+                            </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">⚔️ PK Баттлы (LinkMic)</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-purple-400 font-mono text-sm mb-1">linkMicBattle</p><p class="text-xs text-slate-400">События начала и завершения баттла.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-purple-400 font-mono text-sm mb-1">linkMicArmies</p><p class="text-xs text-slate-400">Обновление очков в баттле.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-purple-400 font-mono text-sm mb-1">linkMicBattleTask</p><p class="text-xs text-slate-400">Обновление мини-заданий во время баттла.</p></div>
+                            </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">⚙️ Системные события</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-amber-400 font-mono text-sm mb-1">stream_status</p><p class="text-xs text-slate-400">Статус: <code>{ isLive: boolean, roomId: string }</code>.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-amber-400 font-mono text-sm mb-1">streamEnd</p><p class="text-xs text-slate-400">Стрим был завершен или заблокирован.</p></div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border"><p class="text-amber-400 font-mono text-sm mb-1">imDelete</p><p class="text-xs text-slate-400">Удаление сообщения модератором.</p></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (state.activeNav === 'profile') {
+                const myWidgets = state.widgets.filter(w => w.creator_id === state.userId);
+                const displayLetter = state.platformUsername ? state.platformUsername.charAt(0) : (state.tiktokUsername ? state.tiktokUsername.charAt(0) : "S");
+                const displayName = state.platformUsername ? `@${state.platformUsername}` : "Ваш Профиль";
+                
+                content = `
+                    <div class="max-w-4xl mx-auto py-4 px-4 w-full space-y-8">
+                        <div class="mb-4">
+                            <h2 class="text-2xl font-bold tracking-tight text-white">Настройки профиля</h2>
+                            <p class="text-sm text-slate-400 mt-1">Управляйте аккаунтом на платформе widg.space</p>
+                        </div>
+                        
+                        <div class="bg-card rounded-3xl border border-border p-6 md:p-8 flex flex-col md:flex-row gap-8 justify-between shadow-lg">
+                            <div class="flex items-center gap-5">
+                                <div class="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold text-white uppercase bg-gradient-to-r from-blue-500 to-purple-500 shadow-xl flex-shrink-0">${displayLetter}</div>
+                                <div>
+                                    <h2 class="text-xl font-bold">${displayName}</h2>
+                                    <p class="text-xs text-slate-400 mt-1">ID: ${state.userId ? state.userId.slice(0,8) : ''}...</p>
+                                </div>
+                            </div>
+                            <div class="flex-1 max-w-lg space-y-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">widg.space Username (Авторство)</label>
+                                    <input id="profile-platform" value="${state.platformUsername}" placeholder="Например: SuperDev" class="w-full bg-[#0e1621] border border-border rounded-lg px-3 py-2.5 text-sm focus:border-[#3da9de] outline-none text-white" />
+                                    <p class="text-[10px] text-slate-500 mt-1.5">Будет отображаться как имя автора на всех ваших виджетах.</p>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">TikTok Username (Для OBS)</label>
+                                    <input id="profile-tiktok" value="${state.tiktokUsername}" placeholder="Например: jake_streamer" class="w-full bg-[#0e1621] border border-border rounded-lg px-3 py-2.5 text-sm focus:border-[#3da9de] outline-none text-white" />
+                                    <p class="text-[10px] text-slate-500 mt-1.5">Необходим для генерации персональных ссылок при добавлении чужих виджетов.</p>
+                                </div>
+                                <button id="save-profile-btn" class="w-full md:w-auto px-6 py-2.5 bg-[#3da9de] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity mt-2">Сохранить изменения</button>
+                            </div>
+                        </div>
+
+                        <div class="mt-10">
+                            <h3 class="text-xl font-bold mb-5 flex items-center gap-2"><i data-lucide="code" class="text-[#3da9de]"></i> Виджеты, созданные вами</h3>
+                            ${myWidgets.length === 0 ? `
+                                <div class="bg-[#0e1621]/50 border border-border border-dashed rounded-3xl p-8 text-center">
+                                    <p class="text-slate-400 text-sm">Вы еще не опубликовали ни одного виджета.</p>
+                                    <button data-nav="upload" class="mt-4 text-[#3da9de] hover:underline text-sm font-semibold">Опубликовать первый виджет</button>
+                                </div>
+                            ` : `
+                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    ${myWidgets.map(w => `
+                                        <div data-stats-widget="${w.id}" class="bg-card border border-border rounded-2xl p-5 cursor-pointer hover:-translate-y-1 hover:border-[#3da9de]/50 transition-all shadow-md group">
+                                            <div class="flex items-start justify-between mb-3">
+                                                <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner" style="background: ${w.gradient}"><i data-lucide="${w.icon_name || 'code'}" class="text-white w-5 h-5"></i></div>
+                                                <span class="bg-[#3da9de]/10 text-[#3da9de] text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> ${fmtInstalls(w.installs)}</span>
+                                            </div>
+                                            <h4 class="font-bold text-[#e8edf2] text-sm mb-1 truncate">${w.name}</h4>
+                                            <p class="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">Нажмите, чтобы увидеть статистику</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            main.innerHTML = mobileHeader + content;
+        }
+
+        function renderModal() {
+            const container = document.getElementById('modal-container');
+            if (!state.selectedWidget) { container.innerHTML = ''; return; }
+
+            const widget = state.selectedWidget;
+            const isInstalled = state.installedIds.has(widget.id);
+            const iconName = widget.icon_name ? widget.icon_name.toLowerCase() : 'code';
+            const obsUrl = state.tiktokUsername ? `${window.location.origin}/w/${widget.id}?user=${state.tiktokUsername}` : 'Укажите TikTok Username в профиле';
+
+            container.innerHTML = `
+                <div class="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" data-close-modal="true"></div>
+                <div class="fixed z-50 left-0 right-0 bottom-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 w-full md:w-[500px] bg-card md:rounded-3xl rounded-t-3xl border border-border overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+                    <div class="md:hidden flex justify-center pt-3 pb-2 bg-card"><div class="w-12 h-1.5 bg-border rounded-full"></div></div>
+                    <div class="overflow-y-auto p-5 md:p-6 scrollbar-hide">
+                        <div class="flex items-start justify-between mb-5">
+                            <div class="flex items-center gap-4">
+                                <div class="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg" style="background: ${widget.gradient}"><i data-lucide="${iconName}" class="text-white w-7 h-7"></i></div>
+                                <div><h2 class="font-bold text-lg leading-tight">${widget.name}</h2><p class="text-sm text-slate-400 mt-1">от ${widget.author}</p></div>
+                            </div>
+                            <button data-close-modal="true" class="p-2 rounded-full bg-secondary text-slate-400 hover:bg-secondary/80"><i data-lucide="x" class="w-4 h-4"></i></button>
+                        </div>
+                        <div class="relative h-48 w-full rounded-2xl overflow-hidden mb-5 checker-bg">
+                            <div class="absolute inset-0 opacity-20" style="background: ${widget.gradient}"></div>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                                <div class="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transform scale-110" style="background: ${widget.gradient}"><i data-lucide="${iconName}" class="text-white w-8 h-8"></i></div>
+                                <span class="text-xs text-white/70 font-mono uppercase tracking-widest px-3 py-1 bg-black/40 rounded-full backdrop-blur-md">Прозрачный фон</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-white/80 leading-relaxed mb-6">${widget.description || 'Оверлей для отображения активности на стриме.'}</p>
+                        
+                        ${state.userId ? `
+                        <div class="bg-[#0e1621] rounded-2xl p-4 border border-border mb-6">
+                            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Ссылка для Browser Source</h3>
+                            <div class="flex gap-2">
+                                <code class="text-xs text-slate-400 flex-1 truncate bg-card border border-border px-3 py-2.5 rounded-xl font-mono flex items-center">${obsUrl}</code>
+                                <button data-copy="${widget.id}" class="shrink-0 w-10 h-10 rounded-xl bg-[#3da9de] text-white flex items-center justify-center hover:opacity-90"><i data-lucide="${state.copiedId === widget.id ? 'check' : 'copy'}" class="w-4 h-4"></i></button>
+                            </div>
+                        </div>` : `<div class="bg-[#0e1621]/50 rounded-2xl p-4 border border-border mb-6 text-center"><p class="text-sm text-slate-400">Авторизуйтесь, чтобы получить ссылку</p></div>`}
+
+                        <button data-install-modal="${widget.id}" class="w-full py-4 rounded-xl font-bold text-sm transition-all shadow-lg ${!state.userId ? 'bg-[#3da9de] text-white' : (isInstalled ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'text-white')}" style="${state.userId && !isInstalled ? `background: ${widget.gradient}` : ''}">
+                            ${!state.userId ? "Войти чтобы добавить" : (isInstalled ? "✓ Добавлен в библиотеку" : "Добавить в мои виджеты")}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderStatsModal() {
+            const container = document.getElementById('stats-modal-container');
+            if (!state.statsWidget) { container.innerHTML = ''; return; }
+            
+            const w = state.statsWidget;
+            container.innerHTML = `
+                <div class="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" data-close-stats="true"></div>
+                <div class="fixed z-50 left-0 right-0 bottom-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 w-full md:w-[400px] bg-card md:rounded-3xl rounded-t-3xl border border-border overflow-hidden shadow-2xl flex flex-col p-6 md:p-8">
+                    <div class="flex justify-between items-start mb-6">
+                        <div><h2 class="text-xl font-bold leading-tight">Статистика</h2><p class="text-xs text-slate-400 mt-1">Виджет опубликован: ${new Date(w.created_at || Date.now()).toLocaleDateString('ru-RU')}</p></div>
+                        <button data-close-stats="true" class="p-2 rounded-full bg-secondary hover:bg-secondary/80 text-slate-400"><i data-lucide="x" class="w-4 h-4"></i></button>
+                    </div>
+                    <div class="bg-[#0e1621] rounded-2xl p-5 border border-border mb-6">
+                        <div class="flex items-center gap-3 mb-5">
+                            <div class="w-10 h-10 rounded-lg flex items-center justify-center shadow-lg" style="background: ${w.gradient}"><i data-lucide="${w.icon_name || 'code'}" class="text-white w-5 h-5"></i></div>
+                            <h3 class="font-bold text-base text-white leading-tight truncate">${w.name}</h3>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-card p-4 rounded-xl border border-border text-center shadow-inner">
+                                <i data-lucide="download" class="w-6 h-6 text-[#3da9de] mx-auto mb-2 opacity-80"></i>
+                                <p class="text-2xl font-bold text-white">${fmtInstalls(w.installs)}</p>
+                                <p class="text-[10px] text-slate-400 uppercase tracking-wider mt-1 font-semibold">Установок</p>
+                            </div>
+                            <div class="bg-card p-4 rounded-xl border border-border text-center shadow-inner">
+                                <i data-lucide="star" class="w-6 h-6 text-amber-400 mx-auto mb-2 opacity-80"></i>
+                                <p class="text-2xl font-bold text-white">${w.rating}</p>
+                                <p class="text-[10px] text-slate-400 uppercase tracking-wider mt-1 font-semibold">Рейтинг</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button data-close-stats="true" class="w-full py-3.5 bg-secondary text-white rounded-xl font-bold hover:bg-secondary/80 transition-colors">Закрыть</button>
+                </div>
+            `;
+        }
+
+        // ── EVENT DELEGATION ─────────────────────────────────────────────────
+        document.addEventListener('click', async (e) => {
+            const navBtn = e.target.closest('[data-nav]');
+            if (navBtn) { state.activeNav = navBtn.dataset.nav; renderAll(); return; }
+
+            const catBtn = e.target.closest('[data-category]');
+            if (catBtn) { state.activeCategory = catBtn.dataset.category; renderAll(); return; }
+
+            const widgetCard = e.target.closest('[data-widget]');
+            const installBtnInCard = e.target.closest('[data-install]');
+            if (widgetCard && !installBtnInCard) {
+                const id = parseInt(widgetCard.dataset.widget);
+                state.selectedWidget = state.widgets.find(w => w.id === id);
+                renderAll(); return;
+            }
+
+            if (e.target.closest('[data-close-modal]')) { state.selectedWidget = null; state.copiedId = null; renderAll(); return; }
+            if (e.target.closest('[data-stats-widget]')) {
+                state.statsWidget = state.widgets.find(w => w.id === parseInt(e.target.closest('[data-stats-widget]').dataset.statsWidget));
+                renderStatsModal(); lucide.createIcons(); return;
+            }
+            if (e.target.closest('[data-close-stats]')) { state.statsWidget = null; renderStatsModal(); return; }
+
+            if (e.target.id === 'save-profile-btn') {
+                const btn = e.target; btn.innerText = "Сохранение...";
+                const pUser = document.getElementById('profile-platform').value.trim();
+                const tUser = document.getElementById('profile-tiktok').value.trim();
+                try {
+                    await supabaseFetch(`stream_users?id=eq.${state.userId}`, { method: 'PATCH', body: JSON.stringify({ platform_username: pUser, tiktok_username: tUser }) });
+                    state.platformUsername = pUser; state.tiktokUsername = tUser;
+                    btn.className = "w-full md:w-auto px-6 py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-semibold mt-2"; btn.innerText = "Сохранено!";
+                    setTimeout(() => { btn.className = "w-full md:w-auto px-6 py-2.5 bg-[#3da9de] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity mt-2"; btn.innerText = "Сохранить изменения"; }, 2500);
+                } catch (err) { alert("Ошибка сохранения: " + err.message); btn.innerText = "Сохранить изменения"; }
+                return;
+            }
+
+            const installBtn = e.target.closest('[data-install]') || e.target.closest('[data-install-modal]');
+            if (installBtn) {
+                if (!state.userId) { state.selectedWidget = null; state.activeNav = "auth"; renderAll(); return; }
+                const id = parseInt(installBtn.dataset.install || installBtn.dataset.installModal);
+                const isAdding = !state.installedIds.has(id);
+                try {
+                    if (isAdding) {
+                        state.installedIds.add(id); await supabaseFetch('stream_user_installs', { method: 'POST', body: JSON.stringify({ user_id: state.userId, widget_id: id }) });
+                    } else {
+                        state.installedIds.delete(id); await supabaseFetch(`stream_user_installs?user_id=eq.${state.userId}&widget_id=eq.${id}`, { method: 'DELETE' });
+                    }
+                    renderAll();
+                } catch (err) { console.error(err); }
+                return;
+            }
+
+            const copyBtn = e.target.closest('[data-copy]');
+            if (copyBtn) {
+                if (!state.tiktokUsername) { alert("Укажите TikTok Username в профиле!"); state.selectedWidget = null; state.activeNav = "profile"; renderAll(); return; }
+                const widget = state.widgets.find(w => w.id === parseInt(copyBtn.dataset.copy));
+                navigator.clipboard.writeText(`${window.location.origin}/w/${widget.id}?user=${state.tiktokUsername}`).then(() => {
+                    state.copiedId = widget.id; renderModal(); lucide.createIcons();
+                    setTimeout(() => { state.copiedId = null; renderModal(); lucide.createIcons(); }, 2000);
+                });
+                return;
+            }
+
+            if (e.target.closest('[data-action="logout"]')) handleLogout();
+            if (e.target.closest('[data-action="toggle-auth"]')) { state.isLoginMode = !state.isLoginMode; state.authError = ''; renderAll(); }
+        });
+
+        document.addEventListener('input', (e) => { if (e.target.id === 'search-input') { state.searchQuery = e.target.value; renderMain(); lucide.createIcons(); } });
+
+        document.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (e.target.id === 'auth-form') {
+                const email = document.getElementById('auth-email').value; const password = document.getElementById('auth-password').value;
+                state.authError = ''; renderMain(); 
+                try {
+                    const data = await supabaseAuth(state.isLoginMode ? 'token?grant_type=password' : 'signup', { email, password });
+                    if (data.session || data.access_token) {
+                        localStorage.setItem('sb_access_token', data.session?.access_token || data.access_token); localStorage.setItem('sb_user_id', data.user?.id);
+                        state.userId = data.user?.id; state.activeNav = "home"; await initApp(); 
+                    } else if (!state.isLoginMode && data.user) {
+                        state.authError = "Регистрация успешна! Теперь вы можете войти."; state.isLoginMode = true;
+                    }
+                } catch (err) { state.authError = err.message; }
+                renderAll();
+            }
+
+            if (e.target.id === 'upload-form') {
+                if (!state.userId) return;
+                
+                // ВАЖНО: Читаем значения до вызова renderMain(), чтобы они не стерлись!
+                const newWidget = {
+                    name: document.getElementById('up-name').value, 
+                    category: document.getElementById('up-category').value, 
+                    description: document.getElementById('up-desc').value,
+                    author: state.platformUsername || "Разработчик widg.space", 
+                    creator_id: state.userId, 
+                    icon_name: "code",
+                    gradient: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)], 
+                    code_content: document.getElementById('up-code').value, 
+                    tags: [], 
+                    is_new: true
+                };
+
+                // Теперь можно отобразить индикатор загрузки (форма исчезнет)
+                state.isUploading = true; 
+                renderMain();
+                
+                try {
+                    const data = await supabaseFetch('stream_widgets', { method: 'POST', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(newWidget) });
+                    if (data && data.length > 0) { state.widgets.unshift(data[0]); state.activeNav = "home"; }
+                } catch (err) { alert("Ошибка: " + err.message); }
+                
+                state.isUploading = false; 
+                renderAll();
+            }
+        });
+
+        function handleLogout() { localStorage.removeItem('sb_access_token'); localStorage.removeItem('sb_user_id'); state.userId = null; state.installedIds = new Set(); state.activeNav = "home"; renderAll(); }
+        initApp();
+    </script>
+</body>
+</html>
