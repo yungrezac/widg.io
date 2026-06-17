@@ -79,23 +79,48 @@ io.on('connection', (socket) => {
       io.to(tiktokUsername).emit('stream_status', { isLive: false, error: err.message });
     }
 
-    tiktokLiveConnection.on('chat', data => {
-      io.to(tiktokUsername).emit('chat_message', {
-        userId: data.userId, nickname: data.nickname, comment: data.comment, profilePictureUrl: data.profilePictureUrl
-      });
-    });
-
+    // --- ПЕРЕХВАТ ВСЕХ СОБЫТИЙ С ТРАНСЛЯЦИИ ---
+    
+    // Чат
+    tiktokLiveConnection.on('chat', data => io.to(tiktokUsername).emit('chat_message', data));
+    
+    // Подарки (фильтруем спам от комбо)
     tiktokLiveConnection.on('gift', data => {
       if (data.giftType === 1 && !data.repeatEnd) return;
-      io.to(tiktokUsername).emit('gift_received', {
-        nickname: data.nickname, giftName: data.giftName, diamondCount: data.diamondCount, repeatCount: data.repeatCount, giftPictureUrl: data.giftPictureUrl
-      });
+      io.to(tiktokUsername).emit('gift_received', data);
     });
+    
+    // Лайки
+    tiktokLiveConnection.on('like', data => io.to(tiktokUsername).emit('like_received', data));
+    
+    // Вход зрителя на стрим
+    tiktokLiveConnection.on('member', data => io.to(tiktokUsername).emit('member_join', data));
+    
+    // Новый подписчик (фолловер)
+    tiktokLiveConnection.on('follow', data => io.to(tiktokUsername).emit('new_follower', data));
+    
+    // Поделились трансляцией
+    tiktokLiveConnection.on('share', data => io.to(tiktokUsername).emit('stream_share', data));
+    
+    // Изменение количества зрителей (онлайн)
+    tiktokLiveConnection.on('roomUser', data => io.to(tiktokUsername).emit('viewer_count', data));
+    
+    // Платная подписка (Subscribe)
+    tiktokLiveConnection.on('subscribe', data => io.to(tiktokUsername).emit('new_subscribe', data));
+    
+    // Сундуки (Treasure Box)
+    tiktokLiveConnection.on('envelope', data => io.to(tiktokUsername).emit('treasure_box', data));
+    
+    // Вопросы Q&A
+    tiktokLiveConnection.on('question', data => io.to(tiktokUsername).emit('new_question', data));
+    
+    // Эмодзи в чате
+    tiktokLiveConnection.on('emote', data => io.to(tiktokUsername).emit('emote_received', data));
+    
+    // Остальные социальные действия
+    tiktokLiveConnection.on('social', data => io.to(tiktokUsername).emit('social_event', data));
 
-    tiktokLiveConnection.on('like', data => {
-      io.to(tiktokUsername).emit('like_received', { nickname: data.nickname, likeCount: data.likeCount, totalLikes: data.totalLikeCount });
-    });
-
+    // Статусы стрима
     tiktokLiveConnection.on('streamEnd', () => io.to(tiktokUsername).emit('stream_status', { isLive: false }));
     tiktokLiveConnection.on('disconnected', () => io.to(tiktokUsername).emit('stream_status', { isLive: false }));
   });
