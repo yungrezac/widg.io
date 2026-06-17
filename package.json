@@ -1,16 +1,17 @@
 {
-  "name": "streamkit-html",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.45.0",
-    "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "socket.io": "^4.7.5",
-    "tiktok-live-connector": "*"
-  }
+"name": "widgio-server",
+"version": "1.0.0",
+"description": "Server for TikTok Live Widgets",
+"main": "server.js",
+"type": "module",
+"scripts": {
+"start": "node server.js"
+},
+"dependencies": {
+"@supabase/supabase-js": "^2.43.0",
+"cors": "^2.8.5",
+"express": "^4.19.2",
+"socket.io": "^4.7.5",
+"tiktok-live-connector": "^1.1.2"
+}
 }
