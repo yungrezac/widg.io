@@ -39,26 +39,20 @@
             background-position: 0 0,0 7px,7px -7px,-7px 0px;
             background-color: #141f2a;
         }
-        /* Loader */
         .loader { border: 3px solid rgba(255,255,255,0.1); border-top-color: #3da9de; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="overflow-hidden flex h-screen w-full">
 
-    <!-- Левое меню (Desktop) -->
     <nav class="hidden md:flex flex-col w-64 border-r border-border bg-card/50 p-4 h-full" id="sidebar"></nav>
 
-    <!-- Основной контент -->
     <main class="flex-1 overflow-y-auto relative pb-24 md:pb-8 flex flex-col" id="main-content">
-        <!-- Сюда будет рендериться контент -->
         <div class="flex h-full items-center justify-center"><div class="loader"></div></div>
     </main>
 
-    <!-- Нижнее меню (Mobile) -->
     <nav class="md:hidden fixed bottom-0 left-0 right-0 border-t border-border flex items-center justify-around px-2 pt-2 pb-5 bg-[#0e1621]/90 backdrop-blur-xl z-30" id="bottom-bar"></nav>
 
-    <!-- Модальное окно виджета -->
     <div id="modal-container"></div>
 
     <script>
@@ -372,67 +366,132 @@
 
                         <!-- ДОКУМЕНТАЦИЯ API -->
                         <div class="mt-12 bg-card rounded-3xl border border-border p-6 md:p-8">
-                            <h3 class="text-2xl font-bold mb-4 flex items-center gap-3">
-                                <i data-lucide="book-open" class="text-[#3da9de]"></i> Полный справочник WebSockets API
+                            <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                                <i data-lucide="book-open" class="text-[#3da9de]"></i> Полная документация API событий
                             </h3>
-                            <p class="text-slate-400 text-sm mb-6 leading-relaxed">Внутри вашего виджета необходимо подключиться к нашему WebSocket серверу. Имя стримера (<b>user</b>) передается в URL-параметрах. Наш сервер передает <b>сырые данные</b> напрямую от TikTok, так что вам доступны аватарки, бейджики модераторов, цвета никнеймов и многое другое.</p>
+                            <p class="text-slate-400 text-sm mb-6 leading-relaxed">
+                                Наш WebSocket-сервер автоматически перехватывает <b>абсолютно все</b> события оригинального API TikTok и транслирует их в ваш виджет. Имя стримера (<b>user</b>) передается в URL-параметрах при добавлении в OBS.
+                            </p>
                             
                             <h4 class="font-bold text-lg text-white mb-3 mt-8">1. Базовое подключение</h4>
-                            <pre class="bg-[#0e1621] p-4 rounded-xl border border-border overflow-x-auto text-xs text-[#3da9de] leading-loose">
-<span class="text-slate-500">// 1. В &lt;head&gt; подключите socket.io клиент</span>
+                            <pre class="bg-[#0e1621] p-4 rounded-xl border border-border overflow-x-auto text-xs text-[#3da9de] leading-loose mb-8">
+<span class="text-slate-500">// Подключите socket.io клиент в head</span>
 &lt;script src="https://cdn.socket.io/4.7.2/socket.io.min.js"&gt;&lt;/script&gt;
 
-<span class="text-slate-500">// 2. В вашем JS коде (получаем username из URL):</span>
+<span class="text-slate-500">// Подключитесь и подпишитесь на события</span>
 const username = new URLSearchParams(window.location.search).get('user');
 const socket = io(window.location.origin);
 
-socket.on("connect", () => {
-    socket.emit("join_stream", username);
-});</pre>
+socket.on("connect", () => socket.emit("join_stream", username));
 
-                            <h4 class="font-bold text-lg text-white mb-4 mt-10">2. Доступные события (Слушатели)</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">chat_message</p>
-                                    <p class="text-xs text-slate-400">Сообщения чата. Отдает <code>comment</code>, <code>nickname</code>, <code>profilePictureUrl</code>, бейджи юзера и т.д.</p>
+<span class="text-slate-500">// Пример: слушаем чат</span>
+socket.on("chat", (data) => console.log(data.nickname, data.comment));</pre>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">💬 Чат и Общение</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">chat</p>
+                                    <p class="text-xs text-slate-400">Сообщения пользователей. Доступны: nickname, comment, userId, profilePictureUrl.</p>
                                 </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">gift_received</p>
-                                    <p class="text-xs text-slate-400">Подарки (уже отфильтрованные от спама комбо). Отдает <code>giftName</code>, <code>giftPictureUrl</code>, <code>diamondCount</code>, <code>repeatCount</code>.</p>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">emote</p>
+                                    <p class="text-xs text-slate-400">Отправка кастомных стикеров (эмодзи) подписчиками стримера.</p>
                                 </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">like_received</p>
-                                    <p class="text-xs text-slate-400">Лайки от зрителей (приходят порциями). Отдает <code>likeCount</code> и <code>totalLikeCount</code>.</p>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">questionNew</p>
+                                    <p class="text-xs text-slate-400">Новый вопрос, заданный через функционал Q&A.</p>
                                 </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">member_join</p>
-                                    <p class="text-xs text-slate-400">Вход зрителя на стрим. Содержит данные профиля зрителя.</p>
-                                </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">new_follower & stream_share</p>
-                                    <p class="text-xs text-slate-400">События подписки на канал (фоллоу) и репоста трансляции.</p>
-                                </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">viewer_count</p>
-                                    <p class="text-xs text-slate-400">Регулярное обновление текущего онлайна (отдает <code>viewerCount</code>).</p>
-                                </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">new_subscribe</p>
-                                    <p class="text-xs text-slate-400">Платная подписка на канал стримера (сабы).</p>
-                                </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-emerald-400 font-mono text-sm mb-1">treasure_box</p>
-                                    <p class="text-xs text-slate-400">Появление сундука с монетами на стриме (содержит данные сундука).</p>
-                                </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-purple-400 font-mono text-sm mb-1">pk_battle & pk_armies</p>
-                                    <p class="text-xs text-slate-400"><b>Эксклюзив!</b> События соревнований (PK Battles). Содержит очки сторон и активных дарителей битвы.</p>
-                                </div>
-                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border hover:border-[#3da9de]/50 transition-colors">
-                                    <p class="text-amber-400 font-mono text-sm mb-1">stream_status</p>
-                                    <p class="text-xs text-slate-400">Системный ивент статуса сервера: <code>{ isLive: boolean, roomId: string, error: string }</code></p>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">roomPin</p>
+                                    <p class="text-xs text-slate-400">Сообщение или действие было закреплено модератором.</p>
                                 </div>
                             </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">🎁 Подарки и Финансы</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">gift</p>
+                                    <p class="text-xs text-slate-400">Отправка подарков. Содержит <code>giftName</code>, <code>diamondCount</code>, <code>repeatCount</code>. Отфильтровано от спама комбо-подарками.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">envelope</p>
+                                    <p class="text-xs text-slate-400">Появление сундука (Treasure Box) с монетами на стриме.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">goalUpdate</p>
+                                    <p class="text-xs text-slate-400">Обновление прогресса цели стримера (Goal).</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">subscribe</p>
+                                    <p class="text-xs text-slate-400">Пользователь оформил платную подписку на стримера.</p>
+                                </div>
+                            </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">👥 Зрители и Социалки</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">like</p>
+                                    <p class="text-xs text-slate-400">Лайки от зрителей. Возвращает <code>likeCount</code> и <code>totalLikeCount</code>.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">roomUser</p>
+                                    <p class="text-xs text-slate-400">Периодическое обновление счетчика онлайна (<code>viewerCount</code>) и список топ-гифтеров.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">member</p>
+                                    <p class="text-xs text-slate-400">Новый зритель зашел на трансляцию.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">follow / share</p>
+                                    <p class="text-xs text-slate-400">События подписки на канал или поделившихся трансляцией.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">superFan</p>
+                                    <p class="text-xs text-slate-400">Взаимодействие от "Супер-фанатов" (Super Fan, Join, Box).</p>
+                                </div>
+                            </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">⚔️ PK Баттлы (LinkMic)</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-purple-400 font-mono text-sm mb-1">linkMicBattle</p>
+                                    <p class="text-xs text-slate-400">События начала, течения и завершения баттла.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-purple-400 font-mono text-sm mb-1">linkMicArmies</p>
+                                    <p class="text-xs text-slate-400">Обновление очков и список "армий", участвующих в баттле.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-purple-400 font-mono text-sm mb-1">linkMicBattleTask</p>
+                                    <p class="text-xs text-slate-400">Обновление мини-заданий во время баттла (Battle Task).</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-purple-400 font-mono text-sm mb-1">linkMicBattlePunishFinish</p>
+                                    <p class="text-xs text-slate-400">Завершение наказания проигравшего после баттла.</p>
+                                </div>
+                            </div>
+
+                            <h4 class="font-bold text-lg text-white border-b border-border pb-2 mb-4 mt-8">⚙️ Системные и Модерация</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-amber-400 font-mono text-sm mb-1">stream_status</p>
+                                    <p class="text-xs text-slate-400">Кастомный ивент статуса: <code>{ isLive: boolean, roomId: string }</code>.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-amber-400 font-mono text-sm mb-1">streamEnd</p>
+                                    <p class="text-xs text-slate-400">Стрим был завершен стримером или заблокирован модератором.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-amber-400 font-mono text-sm mb-1">imDelete</p>
+                                    <p class="text-xs text-slate-400">Сообщение или пользователь были удалены/заблокированы в чате.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-amber-400 font-mono text-sm mb-1">liveIntro</p>
+                                    <p class="text-xs text-slate-400">Приветственное системное описание трансляции.</p>
+                                </div>
+                            </div>
+
+                            <p class="text-slate-500 text-xs mt-6">А также: <code>rankUpdate</code>, <code>rankText</code>, <code>pollMessage</code>, <code>oecLiveShopping</code> и другие. Все объекты передаются ровно в таком виде, в каком их отдает TikTok Webcast API.</p>
                         </div>
                     </div>
                 `;
