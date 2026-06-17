@@ -80,26 +80,23 @@ io.on('connection', (socket) => {
       const streamData = activeTikTokStreams.get(tiktokUsername);
       streamData.usersCount += 1;
       
-      // 2. В новой версии библиотеки статус подключения проверяется так:
-      const isConnected = streamData.connection?.state?.isConnected || false;
-      
+      // Отправляем статус с кешированным значением подписчиков
       socket.emit('stream_status', { 
-          isLive: isConnected,
+          isLive: streamData.connection?.getState()?.isConnected || false,
           followerCount: streamData.lastFollowerCount || 0
       });
       return;
     }
 
     console.log(`[TikTok] Подключаемся к: ${tiktokUsername}`);
-    
-    // 3. Используем новый класс TikTokLiveConnection
     const connection = new TikTokLiveConnection(tiktokUsername, {
       processInitialData: true,
-      enableExtendedGiftInfo: true
+      enableExtendedGiftInfo: false // <--- МЕНЯЕМ TRUE НА FALSE ЗДЕСЬ
     });
     
     activeTikTokStreams.set(tiktokUsername, { connection, usersCount: 1, lastFollowerCount: 0 });
 
+    // ВАЖНО: Добавляем обработчик ошибок, чтобы сервер не падал с 502 ошибкой
     connection.on('error', (err) => {
         console.error(`[TikTok Error - ${tiktokUsername}]:`, err);
     });
