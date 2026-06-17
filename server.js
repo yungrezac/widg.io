@@ -13,7 +13,7 @@ const { WebcastPushConnection } = require('tiktok-live-connector');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Инициализация Supabase
+// Инициализация Supabase для сервера
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lqjagftaeejdufwwvjwd.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_6-9IBhMX9CMVbIackZAJ9g_UUk5FDqx';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -21,14 +21,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// Раздача статики
 app.use(express.static(__dirname));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-// Полный список событий
+// Полный список событий из документации tiktok-live-connector
 const TIKTOK_EVENTS = [
     'chat', 'gift', 'like', 'roomUser', 'member', 'social', 'follow', 'share',
     'emote', 'envelope', 'questionNew', 'linkMicBattle', 'linkMicArmies',
@@ -40,52 +38,26 @@ const TIKTOK_EVENTS = [
     'roomVerify', 'linkLayer', 'roomPin'
 ];
 
-// --- 1. ХОСТИНГ ВИДЖЕТОВ (ДЛЯ OBS) ---
+// --- 1. РАЗДАЧА ГЛАВНОГО САЙТА (ФРОНТЕНД) ---
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+// --- 2. ХОСТИНГ ВИДЖЕТОВ (ДЛЯ OBS) ---
 app.get('/w/:id', async (req, res) => {
-  const { id } = req.params;
-  
   try {
-      console.log(`[GET /w/${id}] Запрос кода виджета...`);
-      
-      const { data, error } = await supabase
-        .from('stream_widgets')
-        .select('code_content')
-        .eq('id', id)
-        .single();
+    const { id } = req.params;
+    const { data, error } = await supabase.from('stream_widgets').select('code_content').eq('id', id).single();
 
-      if (error) {
-          console.error(`[DB Error] Ошибка БД при поиске виджета ${id}:`, error.message);
-          return res.status(404).send(`
-              <body style="background:#0e1621; color:#ef4444; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column;">
-                  <h2>Ошибка Базы Данных</h2>
-                  <p>${error.message}</p>
-              </body>
-          `);
-      }
+    if (error || !data || !data.code_content) {
+      return res.status(404).send('<h1 style="color:white; font-family:sans-serif; text-align:center; margin-top:20px;">Виджет не найден на widg.space</h1>');
+    }
 
-      if (!data || !data.code_content) {
-          console.error(`[Not Found] Виджет ${id} не найден или его код пуст.`);
-          return res.status(404).send(`
-              <body style="background:#0e1621; color:white; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column;">
-                  <h2>Виджет не найден (404)</h2>
-                  <p style="color:#a8b8c8;">Возможно, он был удален или ID указан неверно.</p>
-              </body>
-          `);
-      }
-
-      console.log(`[GET /w/${id}] Успешно отдан HTML код.`);
-      res.setHeader('Content-Type', 'text/html');
-      res.send(data.code_content);
-      
+    res.setHeader('Content-Type', 'text/html');
+    res.send(data.code_content);
   } catch (err) {
-      console.error(`[Server Error] Маршрут /w/${id}:`, err);
-      res.status(500).send("Внутренняя ошибка сервера");
+    // Если происходит сбой, отдаем 500 ошибку, а не крашим весь сервер
+    console.error("Ошибка при получении виджета:", err);
+    res.status(500).send('<h1 style="color:white; font-family:sans-serif; text-align:center; margin-top:20px;">Внутренняя ошибка сервера</h1>');
   }
-});
-
-// --- 2. РАЗДАЧА ГЛАВНОГО САЙТА (ФРОНТЕНД) ---
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // --- 3. TIKTOK LIVE WEB SOCKET ---
@@ -96,6 +68,7 @@ io.on('connection', (socket) => {
     if (!tiktokUsername) return;
     socket.join(tiktokUsername);
 
+    // Если мы уже слушаем этого стримера, просто говорим виджету статус
     if (activeTikTokStreams.has(tiktokUsername)) {
       const streamData = activeTikTokStreams.get(tiktokUsername);
       streamData.usersCount += 1;
@@ -111,30 +84,37 @@ io.on('connection', (socket) => {
     
     activeTikTokStreams.set(tiktokUsername, { connection, usersCount: 1 });
 
+    // ВАЖНО: Добавляем обработчик ошибок, чтобы сервер не падал с 502 ошибкой
+    connection.on('error', (err) => {
+        console.error(`[TikTok Error - ${tiktokUsername}]:`, err);
+    });
+
+    // Динамически подписываемся на ВСЕ события из массива и отправляем в сокет-комнату
     TIKTOK_EVENTS.forEach(eventName => {
         connection.on(eventName, (data) => {
             io.to(tiktokUsername).emit(eventName, data);
         });
     });
 
+    // Обработка особых системных статусов
     connection.on('streamEnd', () => io.to(tiktokUsername).emit('stream_status', { isLive: false }));
-    connection.on('disconnected', () => io.to(tiktokUsername).emit('stream_status', { isLive: false }));
-    
-    // ВАЖНО: Перехватываем ошибки коннектора, чтобы сервер не падал (исправление ошибки 502)
-    connection.on('error', (err) => {
-        console.error(`[TikTok Error] Ошибка соединения у ${tiktokUsername}:`, err.message);
+    connection.on('disconnected', () => {
+        io.to(tiktokUsername).emit('stream_status', { isLive: false });
+        activeTikTokStreams.delete(tiktokUsername); // Очищаем мертвые соединения
     });
 
     try {
       const state = await connection.connect();
       io.to(tiktokUsername).emit('stream_status', { isLive: true, roomId: state.roomId });
     } catch (err) {
+      console.error(`[TikTok Connect Error - ${tiktokUsername}]:`, err.message);
       io.to(tiktokUsername).emit('stream_status', { isLive: false, error: err.message });
+      activeTikTokStreams.delete(tiktokUsername);
     }
   });
 
   socket.on('disconnect', () => {
-    // Логика отключения
+    // Логика отключения (можно добавить уменьшение счетчика)
   });
 });
 
