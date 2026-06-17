@@ -79,46 +79,35 @@ io.on('connection', (socket) => {
       io.to(tiktokUsername).emit('stream_status', { isLive: false, error: err.message });
     }
 
-    // --- ПЕРЕХВАТ ВСЕХ СОБЫТИЙ С ТРАНСЛЯЦИИ ---
-    
-    // Чат
-    tiktokLiveConnection.on('chat', data => io.to(tiktokUsername).emit('chat_message', data));
-    
-    // Подарки (фильтруем спам от комбо)
-    tiktokLiveConnection.on('gift', data => {
-      if (data.giftType === 1 && !data.repeatEnd) return;
-      io.to(tiktokUsername).emit('gift_received', data);
+    // --- ПЕРЕХВАТ ВСЕХ ВОЗМОЖНЫХ СОБЫТИЙ С ТРАНСЛЯЦИИ ---
+    const tiktokEvents = [
+      { ttEvent: 'chat', socketEvent: 'chat_message' },
+      { ttEvent: 'member', socketEvent: 'member_join' },
+      { ttEvent: 'gift', socketEvent: 'gift_received' },
+      { ttEvent: 'like', socketEvent: 'like_received' },
+      { ttEvent: 'follow', socketEvent: 'new_follower' },
+      { ttEvent: 'share', socketEvent: 'stream_share' },
+      { ttEvent: 'roomUser', socketEvent: 'viewer_count' },
+      { ttEvent: 'subscribe', socketEvent: 'new_subscribe' },
+      { ttEvent: 'envelope', socketEvent: 'treasure_box' },
+      { ttEvent: 'question', socketEvent: 'new_question' },
+      { ttEvent: 'emote', socketEvent: 'emote_received' },
+      { ttEvent: 'social', socketEvent: 'social_event' },
+      { ttEvent: 'linkMicBattle', socketEvent: 'pk_battle' }, // Начало/обновление PK баттла
+      { ttEvent: 'linkMicArmies', socketEvent: 'pk_armies' }, // Очки и участники PK баттла
+      { ttEvent: 'liveIntro', socketEvent: 'live_intro' }     // Приветственное сообщение стрима
+    ];
+
+    // Динамически вешаем слушатели на все события
+    tiktokEvents.forEach(({ ttEvent, socketEvent }) => {
+      tiktokLiveConnection.on(ttEvent, (data) => {
+        // Фильтруем спам от комбо-подарков (отправляем только итоговое значение комбо)
+        if (ttEvent === 'gift' && data.giftType === 1 && !data.repeatEnd) return;
+        
+        // Отправляем полные, нетронутые данные прямиком в виджет!
+        io.to(tiktokUsername).emit(socketEvent, data);
+      });
     });
-    
-    // Лайки
-    tiktokLiveConnection.on('like', data => io.to(tiktokUsername).emit('like_received', data));
-    
-    // Вход зрителя на стрим
-    tiktokLiveConnection.on('member', data => io.to(tiktokUsername).emit('member_join', data));
-    
-    // Новый подписчик (фолловер)
-    tiktokLiveConnection.on('follow', data => io.to(tiktokUsername).emit('new_follower', data));
-    
-    // Поделились трансляцией
-    tiktokLiveConnection.on('share', data => io.to(tiktokUsername).emit('stream_share', data));
-    
-    // Изменение количества зрителей (онлайн)
-    tiktokLiveConnection.on('roomUser', data => io.to(tiktokUsername).emit('viewer_count', data));
-    
-    // Платная подписка (Subscribe)
-    tiktokLiveConnection.on('subscribe', data => io.to(tiktokUsername).emit('new_subscribe', data));
-    
-    // Сундуки (Treasure Box)
-    tiktokLiveConnection.on('envelope', data => io.to(tiktokUsername).emit('treasure_box', data));
-    
-    // Вопросы Q&A
-    tiktokLiveConnection.on('question', data => io.to(tiktokUsername).emit('new_question', data));
-    
-    // Эмодзи в чате
-    tiktokLiveConnection.on('emote', data => io.to(tiktokUsername).emit('emote_received', data));
-    
-    // Остальные социальные действия
-    tiktokLiveConnection.on('social', data => io.to(tiktokUsername).emit('social_event', data));
 
     // Статусы стрима
     tiktokLiveConnection.on('streamEnd', () => io.to(tiktokUsername).emit('stream_status', { isLive: false }));
