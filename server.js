@@ -81,7 +81,12 @@ io.on('connection', (socket) => {
     if (activeTikTokStreams.has(tiktokUsername)) {
       const streamData = activeTikTokStreams.get(tiktokUsername);
       streamData.usersCount += 1;
-      socket.emit('stream_status', { isLive: streamData.connection?.getState()?.isConnected || false });
+      
+      // Отправляем статус с кешированным значением подписчиков
+      socket.emit('stream_status', { 
+          isLive: streamData.connection?.getState()?.isConnected || false,
+          followerCount: streamData.lastFollowerCount || 0
+      });
       return;
     }
 
@@ -91,7 +96,7 @@ io.on('connection', (socket) => {
       enableExtendedGiftInfo: true
     });
     
-    activeTikTokStreams.set(tiktokUsername, { connection, usersCount: 1 });
+    activeTikTokStreams.set(tiktokUsername, { connection, usersCount: 1, lastFollowerCount: 0 });
 
     // ВАЖНО: Добавляем обработчик ошибок, чтобы сервер не падал с 502 ошибкой
     connection.on('error', (err) => {
@@ -114,7 +119,20 @@ io.on('connection', (socket) => {
 
     try {
       const state = await connection.connect();
-      io.to(tiktokUsername).emit('stream_status', { isLive: true, roomId: state.roomId });
+      
+      // Ищем РЕАЛЬНОЕ количество подписчиков в объекте состояния трансляции
+      const followerCount = state.roomInfo?.owner?.follow_info?.follower_count || 
+                            state.up_info?.follower_count || 0;
+                            
+      // Сохраняем в память сервера, чтобы новые подключения тоже могли его сразу получить                      
+      const streamData = activeTikTokStreams.get(tiktokUsername);
+      if (streamData) streamData.lastFollowerCount = followerCount;
+
+      io.to(tiktokUsername).emit('stream_status', { 
+          isLive: true, 
+          roomId: state.roomId,
+          followerCount: followerCount // Передаем подписчиков в виджет!
+      });
     } catch (err) {
       console.error(`[TikTok Connect Error - ${tiktokUsername}]:`, err.message);
       io.to(tiktokUsername).emit('stream_status', { isLive: false, error: err.message });
