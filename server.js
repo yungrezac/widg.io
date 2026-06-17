@@ -1,12 +1,14 @@
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
-import pkg from 'tiktok-live-connector';
-const { WebcastPushConnection } = pkg;
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { WebcastPushConnection } = require('tiktok-live-connector');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
