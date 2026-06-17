@@ -121,8 +121,11 @@ io.on('connection', (socket) => {
       const state = await connection.connect();
       
       // Ищем РЕАЛЬНОЕ количество подписчиков в объекте состояния трансляции
-      const followerCount = state.roomInfo?.owner?.follow_info?.follower_count || 
-                            state.up_info?.follower_count || 0;
+      // Библиотека tiktok-live-connector конвертирует ключи в camelCase (followInfo.followerCount)
+      const followerCount = state.roomInfo?.owner?.followInfo?.followerCount || 
+                            state.roomInfo?.owner?.follow_info?.follower_count || 0;
+                            
+      console.log(`[TikTok] Успешно! Стример ${tiktokUsername}. Подписчиков: ${followerCount}`);
                             
       // Сохраняем в память сервера, чтобы новые подключения тоже могли его сразу получить                      
       const streamData = activeTikTokStreams.get(tiktokUsername);
