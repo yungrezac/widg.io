@@ -26,6 +26,15 @@ app.use(express.static(__dirname));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
+// Добавляем глобальный перехват ошибок, чтобы сервер НИКОГДА не падал полностью
+process.on('uncaughtException', (err) => {
+    console.error('🔥 Критическая ошибка (uncaughtException):', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 Необработанный Promise (unhandledRejection):', reason);
+});
+
 // Полный список событий из документации tiktok-live-connector
 const TIKTOK_EVENTS = [
     'chat', 'gift', 'like', 'roomUser', 'member', 'social', 'follow', 'share',
@@ -119,6 +128,7 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+// Явно указываем 0.0.0.0, это необходимо для корректного роутинга в Railway
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 widg.space Server запущен на порту ${PORT}`);
 });
