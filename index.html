@@ -100,7 +100,7 @@
         const ICONS_MAP = { "Алерты": "zap", "Чат": "message-circle", "Донаты": "gift", "Цели": "target", "Таймер": "clock", "Игры": "gamepad-2", "Музыка": "music-2", "Статистика": "bar-chart-2", "Эффекты": "sparkles", "Опросы": "bar-chart", "Погода": "cloud", "Все": "layout-grid" };
 
         let state = {
-            activeNav: 'home', // home, installed, upload, profile, auth
+            activeNav: 'home', 
             userId: localStorage.getItem('sb_user_id'),
             tiktokUsername: localStorage.getItem('tiktok_username') || '',
             widgets: [],
@@ -148,7 +148,7 @@
                 ...(state.userId ? [
                     { id: "installed", icon: "bookmark", label: "Мои виджеты", badge: state.installedIds.size },
                     { id: "upload", icon: "code", label: "Создать виджет" },
-                    { id: "profile", icon: "user-circle-2", label: "Профиль и API" }
+                    { id: "profile", icon: "user-circle-2", label: "Настройки профиля" }
                 ] : [])
             ];
 
@@ -216,7 +216,6 @@
             const main = document.getElementById('main-content');
             let content = '';
 
-            // Mobile Header
             const mobileHeader = `
                 <header class="md:hidden flex items-center justify-between px-5 py-4 border-b border-border/50 sticky top-0 bg-[#0e1621]/90 backdrop-blur z-20">
                     <div class="flex items-center gap-2.5">
@@ -273,7 +272,7 @@
                         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                             <div>
                                 <h2 class="text-2xl font-bold tracking-tight">${state.activeNav === "home" ? "Каталог виджетов" : "Моя библиотека"}</h2>
-                                <p class="text-sm text-slate-400 mt-1">${state.activeNav === "home" ? "Универсальные оверлеи для TikTok Live" : "Виджеты, добавленные в ваш аккаунт"}</p>
+                                <p class="text-sm text-slate-400 mt-1">${state.activeNav === "home" ? "Оверлеи для TikTok Live, работающие напрямую с нашим API" : "Виджеты, добавленные в ваш аккаунт"}</p>
                             </div>
                             ${state.activeNav === "home" ? `
                             <div class="relative w-full md:w-72">
@@ -310,7 +309,6 @@
                                                 <i data-lucide="${iconName}" class="text-white w-6 h-6"></i>
                                             </div>
                                         </div>
-                                        ${widget.is_new ? '<span class="absolute top-2 left-2 bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-md border border-emerald-500/30">New</span>' : ''}
                                     </div>
                                     <div class="p-3 md:p-4 flex flex-col flex-1">
                                         <h3 class="text-xs md:text-sm font-semibold leading-tight line-clamp-2 mb-1 md:mb-2">${widget.name}</h3>
@@ -334,19 +332,21 @@
                 `;
             } else if (state.activeNav === 'upload') {
                 content = `
-                    <div class="max-w-3xl mx-auto py-4 px-4 w-full">
+                    <div class="max-w-4xl mx-auto py-4 px-4 w-full">
                         <div class="mb-8 text-center">
                             <div class="w-16 h-16 rounded-full bg-[#3da9de]/10 flex items-center justify-center mx-auto mb-4">
                                 <i data-lucide="code-2" class="text-[#3da9de] w-7 h-7"></i>
                             </div>
-                            <h2 class="text-2xl font-bold">Создать и захостить виджет</h2>
-                            <p class="text-sm text-slate-400 mt-2">Вставьте HTML/JS код. Наш сервис сохранит его и будет выступать хостингом.</p>
+                            <h2 class="text-2xl font-bold">Разработчикам: Создать виджет</h2>
+                            <p class="text-sm text-slate-400 mt-2">Опубликуйте ваш HTML код. Наш сервер бесплатно захостит его и предоставит WebSockets API для TikTok Live.</p>
                         </div>
-                        <form id="upload-form" class="bg-card border border-border rounded-3xl p-6 md:p-8 space-y-5">
+
+                        <!-- ФОРМА ЗАГРУЗКИ -->
+                        <form id="upload-form" class="bg-card border border-border rounded-3xl p-6 md:p-8 space-y-5 shadow-lg">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
-                                    <label class="block text-sm font-medium mb-1.5">Название</label>
-                                    <input required id="up-name" class="w-full bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none text-white" placeholder="Супер чат" />
+                                    <label class="block text-sm font-medium mb-1.5">Название виджета</label>
+                                    <input required id="up-name" class="w-full bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none text-white" placeholder="Супер Дождь из Роз" />
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium mb-1.5">Категория</label>
@@ -356,19 +356,92 @@
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium mb-1.5">Описание</label>
-                                <textarea required id="up-desc" class="w-full h-20 bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none resize-none text-white"></textarea>
+                                <label class="block text-sm font-medium mb-1.5">Краткое описание</label>
+                                <textarea required id="up-desc" class="w-full h-16 bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-sm focus:border-[#3da9de] outline-none resize-none text-white"></textarea>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium mb-1.5 flex justify-between">
-                                    <span>Исходный код (HTML + JS + CSS)</span>
+                                    <span>Полный исходный код (HTML + JS + CSS)</span>
                                 </label>
-                                <textarea required id="up-code" class="w-full h-64 bg-[#0e1621] border border-border rounded-xl px-4 py-3 text-xs font-mono focus:border-[#3da9de] outline-none resize-y text-green-400" placeholder="<!DOCTYPE html>\n<html>..."></textarea>
+                                <textarea required id="up-code" class="w-full h-80 bg-[#0e1621] border border-border rounded-xl px-4 py-4 text-xs font-mono focus:border-[#3da9de] outline-none resize-y text-emerald-400 leading-relaxed" placeholder="<!DOCTYPE html>\n<html>\n<head>\n  <script src=&quot;https://cdn.socket.io/4.7.2/socket.io.min.js&quot;><\/script>\n</head>\n<body>\n  <!-- Ваш код виджета -->\n</body>\n</html>"></textarea>
                             </div>
-                            <button type="submit" ${state.isUploading ? 'disabled' : ''} class="w-full py-4 rounded-xl bg-[#3da9de] text-white font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
-                                ${state.isUploading ? "Публикация..." : "Захостить виджет"}
+                            <button type="submit" ${state.isUploading ? 'disabled' : ''} class="w-full py-4 rounded-xl bg-[#3da9de] text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
+                                ${state.isUploading ? "Публикация..." : "Опубликовать виджет в каталог"}
                             </button>
                         </form>
+
+                        <!-- ДОКУМЕНТАЦИЯ API -->
+                        <div class="mt-12 bg-card rounded-3xl border border-border p-6 md:p-8">
+                            <h3 class="text-2xl font-bold mb-4 flex items-center gap-3">
+                                <i data-lucide="book-open" class="text-[#3da9de]"></i> Справочник API
+                            </h3>
+                            <p class="text-slate-400 text-sm mb-6 leading-relaxed">Внутри вашего виджета вам необходимо подключиться к нашему WebSocket серверу. Имя стримера (<b>user</b>) передается в URL-параметрах при добавлении виджета в OBS.</p>
+                            
+                            <h4 class="font-bold text-lg text-white mb-3 mt-8">1. Базовое подключение</h4>
+                            <pre class="bg-[#0e1621] p-4 rounded-xl border border-border overflow-x-auto text-xs text-[#3da9de] leading-loose">
+<span class="text-slate-500">// В &lt;head&gt; подключите socket.io клиент</span>
+&lt;script src="https://cdn.socket.io/4.7.2/socket.io.min.js"&gt;&lt;/script&gt;
+
+<span class="text-slate-500">// В вашем JS коде:</span>
+const username = new URLSearchParams(window.location.search).get('user');
+const socket = io(window.location.origin);
+
+socket.on("connect", () => {
+    socket.emit("join_stream", username);
+});</pre>
+
+                            <h4 class="font-bold text-lg text-white mb-4 mt-10">2. Доступные события (Слушатели)</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">chat_message</p>
+                                    <p class="text-xs text-slate-400">Сообщение в чате. Отдает полные данные профиля пользователя, текст и бейджи.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">gift_received</p>
+                                    <p class="text-xs text-slate-400">Подарки (уже отфильтрованные от спама комбо). Отдает картинку подарка, цену в алмазах и количество.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">like_received</p>
+                                    <p class="text-xs text-slate-400">Лайки от зрителей (порциями). Отдает likeCount и totalLikeCount.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">member_join</p>
+                                    <p class="text-xs text-slate-400">Новый зритель присоединился к трансляции.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">new_follower</p>
+                                    <p class="text-xs text-slate-400">Зритель подписался на стримера.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">stream_share</p>
+                                    <p class="text-xs text-slate-400">Зритель поделился ссылкой на стрим.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">viewer_count</p>
+                                    <p class="text-xs text-slate-400">Обновление текущего онлайна (отдает viewerCount).</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">new_subscribe</p>
+                                    <p class="text-xs text-slate-400">Платная подписка на канал стримера.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">treasure_box</p>
+                                    <p class="text-xs text-slate-400">Появление сундука с монетами на стриме.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">new_question</p>
+                                    <p class="text-xs text-slate-400">Вопрос, заданный через виджет Q&A.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-emerald-400 font-mono text-sm mb-1">emote_received</p>
+                                    <p class="text-xs text-slate-400">Отправка кастомных стикеров (эмодзи) в чат.</p>
+                                </div>
+                                <div class="bg-[#0e1621] p-4 rounded-xl border border-border">
+                                    <p class="text-amber-400 font-mono text-sm mb-1">stream_status</p>
+                                    <p class="text-xs text-slate-400">Системный ивент: { isLive: boolean, roomId: string }</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 `;
             } else if (state.activeNav === 'profile') {
@@ -387,27 +460,7 @@
                             <div class="bg-[#0e1621] rounded-2xl p-4 border border-border flex-1 md:max-w-xs">
                                 <label class="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Ваш TikTok Username</label>
                                 <input id="profile-tiktok" value="${state.tiktokUsername}" placeholder="Например: jake_streamer" class="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm font-medium focus:border-[#3da9de] outline-none text-white" />
-                            </div>
-                        </div>
-                        
-                        <div class="bg-card rounded-3xl border border-border p-6 md:p-8">
-                            <div class="flex items-center gap-3 mb-6">
-                                <div class="w-10 h-10 rounded-xl bg-[#3da9de]/20 text-[#3da9de] flex items-center justify-center">
-                                    <i data-lucide="code-2" class="w-5 h-5"></i>
-                                </div>
-                                <h3 class="text-xl font-bold">API для виджетов</h3>
-                            </div>
-                            <div class="text-slate-400 text-sm space-y-4">
-                                <p>Виджеты размещаются на нашем сервере. При вставке в OBS к ссылке добавляется параметр <code>?user=ИМЯ</code>.</p>
-                                <pre class="bg-[#0e1621] p-4 rounded-xl border border-border overflow-x-auto text-xs text-blue-400">
-// 1. Получаем username из URL
-const username = new URLSearchParams(window.location.search).get('user');
-// 2. Подключаемся к вебсокету
-const socket = io(window.location.origin);
-socket.on("connect", () => socket.emit("join_stream", username));
-// 3. Слушаем события
-socket.on("chat_message", (data) => console.log(data.nickname, data.comment));
-                                </pre>
+                                <p class="text-[10px] text-slate-500 mt-2">Необходим для генерации персональных ссылок для ваших виджетов.</p>
                             </div>
                         </div>
                     </div>
@@ -478,49 +531,27 @@ socket.on("chat_message", (data) => console.log(data.nickname, data.comment));
 
         // ── EVENT DELEGATION ─────────────────────────────────────────────────
         document.addEventListener('click', async (e) => {
-            // Навигация
             const navBtn = e.target.closest('[data-nav]');
-            if (navBtn) {
-                state.activeNav = navBtn.dataset.nav;
-                renderAll();
-                return;
-            }
+            if (navBtn) { state.activeNav = navBtn.dataset.nav; renderAll(); return; }
 
-            // Выбор категории
             const catBtn = e.target.closest('[data-category]');
-            if (catBtn) {
-                state.activeCategory = catBtn.dataset.category;
-                renderAll();
-                return;
-            }
+            if (catBtn) { state.activeCategory = catBtn.dataset.category; renderAll(); return; }
 
-            // Открытие модалки виджета
             const widgetCard = e.target.closest('[data-widget]');
-            const installBtnInCard = e.target.closest('[data-install]'); // игнор если клик по кнопке
+            const installBtnInCard = e.target.closest('[data-install]');
             if (widgetCard && !installBtnInCard) {
                 const id = parseInt(widgetCard.dataset.widget);
                 state.selectedWidget = state.widgets.find(w => w.id === id);
-                renderAll();
-                return;
+                renderAll(); return;
             }
 
-            // Закрытие модалки
             if (e.target.closest('[data-close-modal]')) {
-                state.selectedWidget = null;
-                state.copiedId = null;
-                renderAll();
-                return;
+                state.selectedWidget = null; state.copiedId = null; renderAll(); return;
             }
 
-            // Установка виджета
             const installBtn = e.target.closest('[data-install]') || e.target.closest('[data-install-modal]');
             if (installBtn) {
-                if (!state.userId) {
-                    state.selectedWidget = null;
-                    state.activeNav = "auth";
-                    renderAll();
-                    return;
-                }
+                if (!state.userId) { state.selectedWidget = null; state.activeNav = "auth"; renderAll(); return; }
                 const id = parseInt(installBtn.dataset.install || installBtn.dataset.installModal);
                 const isAdding = !state.installedIds.has(id);
                 try {
@@ -536,73 +567,51 @@ socket.on("chat_message", (data) => console.log(data.nickname, data.comment));
                 return;
             }
 
-            // Копирование ссылки
             const copyBtn = e.target.closest('[data-copy]');
             if (copyBtn) {
                 if (!state.tiktokUsername) {
                     alert("Укажите Username в профиле!");
-                    state.selectedWidget = null;
-                    state.activeNav = "profile";
-                    renderAll();
-                    return;
+                    state.selectedWidget = null; state.activeNav = "profile"; renderAll(); return;
                 }
                 const widget = state.widgets.find(w => w.id === parseInt(copyBtn.dataset.copy));
                 const url = `${window.location.origin}/w/${widget.id}?user=${state.tiktokUsername}`;
                 navigator.clipboard.writeText(url).then(() => {
-                    state.copiedId = widget.id;
-                    renderModal(); // Перерисовываем только модалку для чекбокса
-                    lucide.createIcons();
+                    state.copiedId = widget.id; renderModal(); lucide.createIcons();
                     setTimeout(() => { state.copiedId = null; renderModal(); lucide.createIcons(); }, 2000);
                 });
                 return;
             }
 
-            // Логаут
             const logoutBtn = e.target.closest('[data-action="logout"]');
             if (logoutBtn) handleLogout();
 
-            // Переключение Auth
             const toggleAuth = e.target.closest('[data-action="toggle-auth"]');
-            if (toggleAuth) {
-                state.isLoginMode = !state.isLoginMode;
-                state.authError = '';
-                renderAll();
-            }
+            if (toggleAuth) { state.isLoginMode = !state.isLoginMode; state.authError = ''; renderAll(); }
         });
 
-        // Слушатель для инпутов (поиск и профиль)
         document.addEventListener('input', (e) => {
-            if (e.target.id === 'search-input') {
-                state.searchQuery = e.target.value;
-                renderMain();
-                lucide.createIcons();
-            }
+            if (e.target.id === 'search-input') { state.searchQuery = e.target.value; renderMain(); lucide.createIcons(); }
             if (e.target.id === 'profile-tiktok') {
-                state.tiktokUsername = e.target.value;
-                localStorage.setItem('tiktok_username', e.target.value);
+                state.tiktokUsername = e.target.value; localStorage.setItem('tiktok_username', e.target.value);
             }
         });
 
-        // Сабмиты форм
         document.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (e.target.id === 'auth-form') {
                 const email = document.getElementById('auth-email').value;
                 const password = document.getElementById('auth-password').value;
-                state.authError = '';
-                renderMain(); // Очищаем ошибку
+                state.authError = ''; renderMain(); 
                 try {
                     const endpoint = state.isLoginMode ? 'token?grant_type=password' : 'signup';
                     const data = await supabaseAuth(endpoint, { email, password });
                     if (data.session || data.access_token) {
                         localStorage.setItem('sb_access_token', data.session?.access_token || data.access_token);
                         localStorage.setItem('sb_user_id', data.user?.id);
-                        state.userId = data.user?.id;
-                        state.activeNav = "home";
-                        await initApp(); // Перезагружаем данные
+                        state.userId = data.user?.id; state.activeNav = "home";
+                        await initApp(); 
                     } else if (!state.isLoginMode && data.user) {
-                        state.authError = "Регистрация успешна! Теперь вы можете войти.";
-                        state.isLoginMode = true;
+                        state.authError = "Регистрация успешна! Теперь вы можете войти."; state.isLoginMode = true;
                     }
                 } catch (err) { state.authError = err.message; }
                 renderAll();
@@ -610,15 +619,13 @@ socket.on("chat_message", (data) => console.log(data.nickname, data.comment));
 
             if (e.target.id === 'upload-form') {
                 if (!state.userId) return;
-                state.isUploading = true;
-                renderMain();
+                state.isUploading = true; renderMain();
                 
                 const newWidget = {
                     name: document.getElementById('up-name').value,
                     category: document.getElementById('up-category').value,
                     description: document.getElementById('up-desc').value,
-                    author: state.tiktokUsername || "Стример",
-                    icon_name: "code",
+                    author: state.tiktokUsername || "Стример", icon_name: "code",
                     gradient: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
                     code_content: document.getElementById('up-code').value, 
                     tags: [], is_new: true
@@ -626,27 +633,18 @@ socket.on("chat_message", (data) => console.log(data.nickname, data.comment));
 
                 try {
                     const data = await supabaseFetch('stream_widgets', { method: 'POST', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(newWidget) });
-                    if (data && data.length > 0) {
-                        state.widgets.unshift(data[0]);
-                        state.activeNav = "home";
-                    }
+                    if (data && data.length > 0) { state.widgets.unshift(data[0]); state.activeNav = "home"; }
                 } catch (err) { alert("Ошибка при загрузке: " + err.message); }
                 
-                state.isUploading = false;
-                renderAll();
+                state.isUploading = false; renderAll();
             }
         });
 
         function handleLogout() {
-            localStorage.removeItem('sb_access_token');
-            localStorage.removeItem('sb_user_id');
-            state.userId = null;
-            state.installedIds = new Set();
-            state.activeNav = "home";
-            renderAll();
+            localStorage.removeItem('sb_access_token'); localStorage.removeItem('sb_user_id');
+            state.userId = null; state.installedIds = new Set(); state.activeNav = "home"; renderAll();
         }
 
-        // Запуск
         initApp();
     </script>
 </body>
