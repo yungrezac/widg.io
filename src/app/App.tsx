@@ -7,9 +7,10 @@ const SUPABASE_URL = 'https://lqjagftaeejdufwwvjwd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_6-9IBhMX9CMVbIackZAJ9g_UUk5FDqx';
 
 async function supabaseFetch(endpoint: string, options: RequestInit = {}) {
+  const token = localStorage.getItem('sb_access_token') || SUPABASE_KEY;
   const headers = {
     'apikey': SUPABASE_KEY,
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
@@ -19,6 +20,20 @@ async function supabaseFetch(endpoint: string, options: RequestInit = {}) {
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+async function supabaseAuth(endpoint: string, body: any) {
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error_description || data.msg || 'Ошибка авторизации');
+  return data;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -34,7 +49,7 @@ interface Widget {
   author: string;
   description: string;
   tags: string[];
-  code_content?: string; // Теперь храним код вместо внешнего URL
+  code_content?: string; 
   is_new?: boolean;
   is_featured?: boolean;
   is_premium?: boolean;
@@ -74,7 +89,7 @@ function CategoryIcon({ cat }: { cat: string }) {
 
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [activeNav, setActiveNav] = useState<"home" | "installed" | "profile" | "upload">("home");
+  const [activeNav, setActiveNav] = useState<"home" | "installed" | "profile" | "upload" | "auth">("home");
   const [activeCategory, setActiveCategory] = useState("Все");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedWidget, setSelectedWidget] = useState<Widget | null>(null);
@@ -88,35 +103,53 @@ export default function App() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Upload State
   const [isUploading, setIsUploading] = useState(false);
   const [uploadForm, setUploadForm] = useState({ name: "", category: "Алерты", desc: "", code: "" });
 
+  // Auth State
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
   const catScrollRef = useRef<HTMLDivElement>(null);
 
-  // 1. Setup Auth & Fetch Data (REST API)
+  // 1. Initial Load
   useEffect(() => {
     const initApp = async () => {
-      let uid = localStorage.getItem('local_uid');
+      const storedToken = localStorage.getItem('sb_access_token');
+      const storedUid = localStorage.getItem('sb_user_id');
       
-      if (!uid) {
-        uid = crypto.randomUUID();
-        localStorage.setItem('local_uid', uid);
+      if (storedToken && storedUid) {
+        setUserId(storedUid);
+        await fetchWidgetsAndInstalls(storedUid);
+      } else {
+        // Загружаем только публичные виджеты для гостей
+        await fetchPublicWidgets();
       }
-      setUserId(uid);
 
       const storedUsername = localStorage.getItem('tiktok_username');
       if (storedUsername) setTiktokUsername(storedUsername);
-
-      await fetchWidgetsAndInstalls(uid);
     };
 
     initApp();
   }, []);
 
+  const fetchPublicWidgets = async () => {
+    setLoading(true);
+    try {
+      const widgetsData = await supabaseFetch('stream_widgets?select=id,name,category,icon_name,gradient,author,description,installs,rating,reviews,tags,is_new&order=created_at.desc');
+      if (widgetsData) setWidgets(widgetsData as Widget[]);
+    } catch (error) {
+      console.error("Ошибка загрузки виджетов:", error);
+    }
+    setLoading(false);
+  };
+
   const fetchWidgetsAndInstalls = async (uid: string) => {
     setLoading(true);
     try {
-      // Не загружаем сам code_content в список, чтобы не грузить память, код берем только на сервере для OBS
       const widgetsData = await supabaseFetch('stream_widgets?select=id,name,category,icon_name,gradient,author,description,installs,rating,reviews,tags,is_new&order=created_at.desc');
       if (widgetsData) setWidgets(widgetsData as Widget[]);
 
@@ -126,6 +159,10 @@ export default function App() {
       }
     } catch (error) {
       console.error("Ошибка загрузки данных:", error);
+      // Если токен протух, очищаем сессию
+      if (error instanceof Error && error.message.includes('401')) {
+        handleLogout();
+      }
     }
     setLoading(false);
   };
@@ -144,10 +181,55 @@ export default function App() {
     return list;
   }, [activeNav, activeCategory, searchQuery, installedIds, widgets]);
 
-  // Handle syncing installs
+  // Auth Handlers
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const endpoint = isLoginMode ? 'token?grant_type=password' : 'signup';
+      const data = await supabaseAuth(endpoint, {
+        email: authForm.email,
+        password: authForm.password
+      });
+
+      if (data.session || data.access_token) {
+        const token = data.session?.access_token || data.access_token;
+        const uid = data.user?.id;
+        
+        localStorage.setItem('sb_access_token', token);
+        localStorage.setItem('sb_user_id', uid);
+        
+        setUserId(uid);
+        setActiveNav("home");
+        await fetchWidgetsAndInstalls(uid);
+      } else if (!isLoginMode && data.user) {
+        setAuthError("Регистрация успешна! (Если включено подтверждение по email, проверьте почту). Попробуйте войти.");
+        setIsLoginMode(true);
+      }
+    } catch (err: any) {
+      setAuthError(err.message);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('sb_access_token');
+    localStorage.removeItem('sb_user_id');
+    setUserId(null);
+    setInstalledIds(new Set());
+    setActiveNav("home");
+  };
+
+  // Sync installs
   const handleInstall = async (id: number, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!userId) return;
+    if (!userId) {
+      setActiveNav("auth");
+      setSelectedWidget(null);
+      return;
+    }
 
     const next = new Set(installedIds);
     const isAdding = !next.has(id);
@@ -171,7 +253,7 @@ export default function App() {
     }
   };
 
-  // Upload custom widget (Now saves CODE instead of URL)
+  // Upload custom widget
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId) return;
@@ -184,7 +266,7 @@ export default function App() {
       author: tiktokUsername || "Анонимный Стример",
       icon_name: "Code",
       gradient: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
-      code_content: uploadForm.code, // СОХРАНЯЕМ КОД
+      code_content: uploadForm.code, 
       tags: [],
       is_new: true
     };
@@ -207,7 +289,6 @@ export default function App() {
     setIsUploading(false);
   };
 
-  // Генерируем ссылку, которая ведет на наш собственный сервер
   const handleCopy = (widget: Widget, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (!tiktokUsername) {
@@ -215,7 +296,6 @@ export default function App() {
       return setActiveNav("profile");
     }
 
-    // Динамическая ссылка на наш сервер (Railway)
     const host = window.location.origin;
     const finalUrl = `${host}/w/${widget.id}?user=${tiktokUsername}`;
 
@@ -258,57 +338,101 @@ export default function App() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        {[
-          { id: "home", Icon: Icons.Home, label: "Каталог виджетов" },
-          { id: "installed", Icon: Icons.Bookmark, label: "Мои виджеты", badge: installedIds.size },
-          { id: "upload", Icon: Icons.Code, label: "Создать виджет" },
-          { id: "profile", Icon: Icons.User2, label: "Мой профиль и API" },
-        ].map(({ id, Icon, label, badge }) => (
-          <button
-            key={id}
-            onClick={() => setActiveNav(id as any)}
-            className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
-              activeNav === id ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Icon size={18} />
-              <span className="text-sm">{label}</span>
+      <div className="flex flex-col gap-2 flex-1">
+        <button
+          onClick={() => setActiveNav("home")}
+          className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+            activeNav === "home" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
+          }`}
+        >
+          <Icons.Home size={18} />
+          <span className="text-sm">Каталог виджетов</span>
+        </button>
+
+        {userId ? (
+          <>
+            <button
+              onClick={() => setActiveNav("installed")}
+              className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
+                activeNav === "installed" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Icons.Bookmark size={18} />
+                <span className="text-sm">Мои виджеты</span>
+              </div>
+              {installedIds.size > 0 && (
+                <span className="bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  {installedIds.size}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveNav("upload")}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeNav === "upload" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
+              }`}
+            >
+              <Icons.Code size={18} />
+              <span className="text-sm">Создать виджет</span>
+            </button>
+            <button
+              onClick={() => setActiveNav("profile")}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeNav === "profile" ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-secondary/50"
+              }`}
+            >
+              <Icons.User2 size={18} />
+              <span className="text-sm">Профиль и API</span>
+            </button>
+            
+            <div className="mt-auto pt-4 border-t border-border">
+              <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-red-400 hover:bg-red-400/10 transition-colors">
+                <Icons.LogOut size={18} />
+                <span className="text-sm font-medium">Выйти</span>
+              </button>
             </div>
-            {badge !== undefined && badge > 0 && (
-               <span className="bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold">
-                 {badge}
-               </span>
-            )}
-          </button>
-        ))}
+          </>
+        ) : (
+          <div className="mt-auto pt-4 border-t border-border">
+            <button onClick={() => setActiveNav("auth")} className="flex items-center justify-center gap-2 px-4 py-3 w-full rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity">
+              <Icons.LogIn size={18} />
+              <span className="text-sm">Войти в аккаунт</span>
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   );
 
   const BottomBar = () => (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t border-border flex items-center justify-around px-2 pt-2 pb-5 bg-background/90 backdrop-blur-xl z-30">
-      {[
-        { id: "home", Icon: Icons.Home, label: "Каталог" },
-        { id: "installed", Icon: Icons.Bookmark, label: "Мои" },
-        { id: "upload", Icon: Icons.Code, label: "Создать" },
-        { id: "profile", Icon: Icons.User2, label: "Профиль" },
-      ].map(({ id, Icon, label }) => {
-        const active = activeNav === id;
-        return (
-          <button
-            key={id}
-            onClick={() => setActiveNav(id as any)}
-            className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${active ? "text-primary" : "text-muted-foreground"}`}
-          >
-            <div className={`p-1.5 rounded-xl transition-all ${active ? "bg-primary/15" : ""}`}>
-              <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-            </div>
-            <span className={`text-[10px] font-medium ${active ? "text-primary" : ""}`}>{label}</span>
+      <button onClick={() => setActiveNav("home")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "home" ? "text-primary" : "text-muted-foreground"}`}>
+        <div className={`p-1.5 rounded-xl transition-all ${activeNav === "home" ? "bg-primary/15" : ""}`}><Icons.Home size={20} strokeWidth={activeNav === "home" ? 2.2 : 1.8} /></div>
+        <span className={`text-[10px] font-medium ${activeNav === "home" ? "text-primary" : ""}`}>Каталог</span>
+      </button>
+
+      {userId ? (
+        <>
+          <button onClick={() => setActiveNav("installed")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "installed" ? "text-primary" : "text-muted-foreground"}`}>
+            <div className={`p-1.5 rounded-xl transition-all ${activeNav === "installed" ? "bg-primary/15" : ""}`}><Icons.Bookmark size={20} strokeWidth={activeNav === "installed" ? 2.2 : 1.8} /></div>
+            <span className={`text-[10px] font-medium ${activeNav === "installed" ? "text-primary" : ""}`}>Мои</span>
           </button>
-        );
-      })}
+          <button onClick={() => setActiveNav("upload")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "upload" ? "text-primary" : "text-muted-foreground"}`}>
+            <div className={`p-1.5 rounded-xl transition-all ${activeNav === "upload" ? "bg-primary/15" : ""}`}><Icons.Code size={20} strokeWidth={activeNav === "upload" ? 2.2 : 1.8} /></div>
+            <span className={`text-[10px] font-medium ${activeNav === "upload" ? "text-primary" : ""}`}>Создать</span>
+          </button>
+          <button onClick={() => setActiveNav("profile")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "profile" ? "text-primary" : "text-muted-foreground"}`}>
+            <div className={`p-1.5 rounded-xl transition-all ${activeNav === "profile" ? "bg-primary/15" : ""}`}><Icons.User2 size={20} strokeWidth={activeNav === "profile" ? 2.2 : 1.8} /></div>
+            <span className={`text-[10px] font-medium ${activeNav === "profile" ? "text-primary" : ""}`}>Профиль</span>
+          </button>
+        </>
+      ) : (
+        <button onClick={() => setActiveNav("auth")} className={`flex flex-col items-center gap-1 px-4 py-1 rounded-xl transition-colors ${activeNav === "auth" ? "text-primary" : "text-muted-foreground"}`}>
+          <div className={`p-1.5 rounded-xl transition-all ${activeNav === "auth" ? "bg-primary/15" : ""}`}><Icons.LogIn size={20} strokeWidth={activeNav === "auth" ? 2.2 : 1.8} /></div>
+          <span className={`text-[10px] font-medium ${activeNav === "auth" ? "text-primary" : ""}`}>Войти</span>
+        </button>
+      )}
     </nav>
   );
 
@@ -318,7 +442,6 @@ export default function App() {
 
       <main className="flex-1 overflow-y-auto relative pb-24 md:pb-8 flex flex-col">
         
-        {/* Mobile Header */}
         <header className="md:hidden flex items-center justify-between px-5 py-4 border-b border-border/50 sticky top-0 bg-background/90 backdrop-blur z-20">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52]">
@@ -329,6 +452,61 @@ export default function App() {
         </header>
 
         <div className="max-w-6xl w-full mx-auto p-4 md:p-8 flex-1">
+          {/* ── AUTH VIEW ── */}
+          {activeNav === "auth" && (
+            <div className="max-w-md mx-auto py-12">
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-br from-[#69c9d0] to-[#ee1d52] shadow-xl mx-auto mb-5">
+                  <Icons.Play size={32} fill="#fff" color="#fff" />
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">
+                  {isLoginMode ? "С возвращением!" : "Создать аккаунт"}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Для сохранения виджетов и генерации ссылок для OBS требуется авторизация.
+                </p>
+              </div>
+
+              <form onSubmit={handleAuthSubmit} className="bg-card border border-border rounded-3xl p-6 md:p-8 shadow-sm">
+                {authError && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-500 text-sm px-4 py-3 rounded-xl mb-5">
+                    {authError}
+                  </div>
+                )}
+                <div className="space-y-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
+                    <input 
+                      required type="email" value={authForm.email} 
+                      onChange={e => setAuthForm({...authForm, email: e.target.value})} 
+                      className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:border-primary outline-none" 
+                      placeholder="streamer@example.com" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1.5">Пароль</label>
+                    <input 
+                      required type="password" value={authForm.password} 
+                      onChange={e => setAuthForm({...authForm, password: e.target.value})} 
+                      className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:border-primary outline-none" 
+                      placeholder="••••••••" 
+                    />
+                  </div>
+                </div>
+                
+                <button disabled={authLoading} type="submit" className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
+                  {authLoading ? "Загрузка..." : (isLoginMode ? "Войти в систему" : "Зарегистрироваться")}
+                </button>
+
+                <div className="mt-6 text-center">
+                  <button type="button" onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(""); }} className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                    {isLoginMode ? "Нет аккаунта? Создать новый" : "Уже есть аккаунт? Войти"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
           {/* ── HOME & INSTALLED VIEWS ── */}
           {(activeNav === "home" || activeNav === "installed") && (
             <>
@@ -434,7 +612,7 @@ export default function App() {
           )}
 
           {/* ── UPLOAD VIEW (Code Input) ── */}
-          {activeNav === "upload" && (
+          {activeNav === "upload" && userId && (
             <div className="max-w-3xl mx-auto py-4">
                <div className="mb-8 text-center">
                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -484,7 +662,7 @@ export default function App() {
           )}
 
           {/* ── PROFILE & API DOCS VIEW ── */}
-          {activeNav === "profile" && (
+          {activeNav === "profile" && userId && (
             <div className="max-w-3xl mx-auto py-4 space-y-8">
               <div className="bg-card rounded-3xl border border-border p-6 md:p-8 flex flex-col md:flex-row gap-6 md:items-center justify-between">
                 <div className="flex items-center gap-5">
@@ -643,33 +821,40 @@ export default function App() {
                   {selectedWidget.description || "Оверлей для отображения активности на вашем стриме TikTok. Подходит для OBS и Streamlabs."}
                 </p>
 
-                <div className="bg-background rounded-2xl p-4 border border-border mb-6">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Ссылка для Browser Source</h3>
-                  <div className="flex gap-2">
-                    <code className="text-xs text-muted-foreground flex-1 truncate bg-card border border-border px-3 py-2.5 rounded-xl font-mono flex items-center">
-                      {tiktokUsername 
-                        ? `${window.location.origin}/w/${selectedWidget.id}?user=${tiktokUsername}` 
-                        : "Сначала укажите Username в профиле"}
-                    </code>
-                    <button
-                      onClick={(e) => handleCopy(selectedWidget, e)}
-                      className="shrink-0 w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
-                    >
-                      {copiedId === selectedWidget.id ? <Icons.Check size={16} /> : <Icons.Copy size={16} />}
-                    </button>
+                {userId ? (
+                  <div className="bg-background rounded-2xl p-4 border border-border mb-6">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Ссылка для Browser Source</h3>
+                    <div className="flex gap-2">
+                      <code className="text-xs text-muted-foreground flex-1 truncate bg-card border border-border px-3 py-2.5 rounded-xl font-mono flex items-center">
+                        {tiktokUsername 
+                          ? `${window.location.origin}/w/${selectedWidget.id}?user=${tiktokUsername}` 
+                          : "Сначала укажите Username в профиле"}
+                      </code>
+                      <button
+                        onClick={(e) => handleCopy(selectedWidget, e)}
+                        className="shrink-0 w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
+                      >
+                        {copiedId === selectedWidget.id ? <Icons.Check size={16} /> : <Icons.Copy size={16} />}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-background/50 rounded-2xl p-4 border border-border mb-6 text-center">
+                    <p className="text-sm text-muted-foreground">Авторизуйтесь, чтобы получить ссылку для OBS</p>
+                  </div>
+                )}
 
                 <button
                   onClick={(e) => handleInstall(selectedWidget.id, e)}
                   className={`w-full py-4 rounded-xl font-bold text-sm transition-all shadow-lg ${
+                    !userId ? "bg-primary text-white" :
                     installedIds.has(selectedWidget.id)
                       ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
                       : "text-white"
                   }`}
-                  style={installedIds.has(selectedWidget.id) ? {} : { background: selectedWidget.gradient }}
+                  style={userId && !installedIds.has(selectedWidget.id) ? { background: selectedWidget.gradient } : {}}
                 >
-                  {installedIds.has(selectedWidget.id) ? "✓ Добавлен в библиотеку" : "Добавить в мои виджеты"}
+                  {!userId ? "Войти чтобы добавить" : (installedIds.has(selectedWidget.id) ? "✓ Добавлен в библиотеку" : "Добавить в мои виджеты")}
                 </button>
               </div>
             </motion.div>
