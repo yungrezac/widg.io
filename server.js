@@ -98,7 +98,7 @@ io.on('connection', (socket) => {
     
     activeTikTokStreams.set(tiktokUsername, { connection, usersCount: 1, lastFollowerCount: 0 });
 
-    // ВАЖНО: Добавляем обработчик ошибок, чтобы сервер не падал с 502 ошибкой
+    // ВАЖНО: Добавляем обработчик ошибок, чтобы сервер не падал
     connection.on('error', (err) => {
         console.error(`[TikTok Error - ${tiktokUsername}]:`, err);
     });
@@ -121,9 +121,8 @@ io.on('connection', (socket) => {
       const state = await connection.connect();
       
       // Ищем РЕАЛЬНОЕ количество подписчиков в объекте состояния трансляции
-      // Библиотека tiktok-live-connector конвертирует ключи в camelCase (followInfo.followerCount)
-      const followerCount = state.roomInfo?.owner?.followInfo?.followerCount || 
-                            state.roomInfo?.owner?.follow_info?.follower_count || 0;
+      const followerCount = state.roomInfo?.owner?.follow_info?.follower_count || 
+                            state.up_info?.follower_count || 0;
                             
       console.log(`[TikTok] Успешно! Стример ${tiktokUsername}. Подписчиков: ${followerCount}`);
                             
@@ -134,7 +133,7 @@ io.on('connection', (socket) => {
       io.to(tiktokUsername).emit('stream_status', { 
           isLive: true, 
           roomId: state.roomId,
-          followerCount: followerCount // Передаем подписчиков в виджет!
+          followerCount: followerCount // Передаем подписчиков в виджет
       });
     } catch (err) {
       console.error(`[TikTok Connect Error - ${tiktokUsername}]:`, err.message);
@@ -144,7 +143,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Логика отключения (можно добавить уменьшение счетчика)
+    // Логика отключения
   });
 });
 
