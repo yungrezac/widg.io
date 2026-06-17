@@ -595,17 +595,32 @@ socket.on("chat", (data) => console.log(data));
 
             if (e.target.id === 'upload-form') {
                 if (!state.userId) return;
-                state.isUploading = true; renderMain();
+                
+                // ВАЖНО: Читаем значения до вызова renderMain(), чтобы они не стерлись!
                 const newWidget = {
-                    name: document.getElementById('up-name').value, category: document.getElementById('up-category').value, description: document.getElementById('up-desc').value,
-                    author: state.platformUsername || "Разработчик widg.space", creator_id: state.userId, icon_name: "code",
-                    gradient: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)], code_content: document.getElementById('up-code').value, tags: [], is_new: true
+                    name: document.getElementById('up-name').value, 
+                    category: document.getElementById('up-category').value, 
+                    description: document.getElementById('up-desc').value,
+                    author: state.platformUsername || "Разработчик widg.space", 
+                    creator_id: state.userId, 
+                    icon_name: "code",
+                    gradient: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)], 
+                    code_content: document.getElementById('up-code').value, 
+                    tags: [], 
+                    is_new: true
                 };
+
+                // Теперь можно отобразить индикатор загрузки (форма исчезнет)
+                state.isUploading = true; 
+                renderMain();
+                
                 try {
                     const data = await supabaseFetch('stream_widgets', { method: 'POST', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(newWidget) });
                     if (data && data.length > 0) { state.widgets.unshift(data[0]); state.activeNav = "home"; }
                 } catch (err) { alert("Ошибка: " + err.message); }
-                state.isUploading = false; renderAll();
+                
+                state.isUploading = false; 
+                renderAll();
             }
         });
 
